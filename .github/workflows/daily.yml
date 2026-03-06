@@ -1,9 +1,9 @@
-name: Daily Garmin Export
+name: Daily Health Export
 
 on:
   schedule:
-    - cron: '0 7 * * *'  # 7am UTC = 8am UK time
-  workflow_dispatch:      # also lets you run it manually
+    - cron: '0 7 * * *'
+  workflow_dispatch:
 
 jobs:
   export:
@@ -16,12 +16,14 @@ jobs:
           python-version: '3.x'
 
       - name: Install dependencies
-        run: pip install garminconnect openpyxl
+        run: pip install -r requirements.txt
 
       - name: Run exporter
         env:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
           GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+          RENPHO_EMAIL: ${{ secrets.RENPHO_EMAIL }}
+          RENPHO_PASSWORD: ${{ secrets.RENPHO_PASSWORD }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
