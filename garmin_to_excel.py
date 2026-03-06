@@ -1,8 +1,8 @@
 """
 Health Data → Excel Daily Exporter
 ------------------------------------
-Single sheet: Garmin stats + weight/body composition from Garmin Connect
-(Weight synced into Garmin via WeightSyncr from Renpho)
+Pulls Garmin activity, wellness, heart rate, sleep and activity data.
+Renpho body composition is merged from a CSV file dropped into the repo.
 
 Requirements:
     pip install garminconnect openpyxl
@@ -15,7 +15,9 @@ Environment variables (set in GitHub Secrets):
     EMAIL_TO            Address to receive the file
 """
 
+import csv
 import datetime
+import glob
 import os
 import smtplib
 from email import encoders
@@ -40,6 +42,7 @@ except ImportError:
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 EXCEL_FILE    = "health_data.xlsx"
 DAYS_TO_FETCH = 7
+RENPHO_CSV_GLOB = "renpho*.csv"  # matches any file starting with "renpho"
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -82,17 +85,20 @@ COLUMNS = [
     ("activity_max_hr",    "Activity Max HR"),
     ("activity_calories",  "Activity Calories"),
 
-    # Body composition (from Garmin, synced via WeightSyncr)
+    # Renpho: Body composition (from CSV)
     ("weight_kg",          "Weight (kg)"),
     ("bmi",                "BMI"),
     ("body_fat_pct",       "Body Fat %"),
     ("muscle_mass_kg",     "Muscle Mass (kg)"),
     ("bone_mass_kg",       "Bone Mass (kg)"),
     ("body_water_pct",     "Body Water %"),
+    ("visceral_fat",       "Visceral Fat"),
+    ("bmr_kcal",           "BMR (kcal)"),
+    ("metabolic_age",      "Metabolic Age"),
 ]
 
-BODY_START_KEY = "weight_kg"
-BODY_START_COL = next(i + 1 for i, (k, _) in enumerate(COLUMNS) if k == BODY_START_KEY)
+RENPHO_START_KEY = "weight_kg"
+RENPHO_START_COL = next(i + 1 for i, (k, _) in enumerate(COLUMNS) if k == RENPHO_START_KEY)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -177,35 +183,80 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
                   "activity_distance","activity_avg_hr","activity_max_hr","activity_calories"]:
             data.setdefault(k, "")
 
-    # Body composition (synced from Renpho via WeightSyncr)
-    try:
-        start = d
-        end   = d
-        body  = client.get_body_composition(start, end)
-        entries = body.get("totalAverage", {}) if body else {}
-
-        # Also try dateWeightList for more granular data
-        weight_list = body.get("dateWeightList", []) if body else []
-        if weight_list:
-            entry = weight_list[-1]  # most recent entry for this day
-            data["weight_kg"]      = round(entry.get("weight", 0) / 1000, 2) if entry.get("weight") else ""
-            data["bmi"]            = entry.get("bmi", "")
-            data["body_fat_pct"]   = entry.get("bodyFat", "")
-            data["muscle_mass_kg"] = round(entry.get("muscleMass", 0) / 1000, 2) if entry.get("muscleMass") else ""
-            data["bone_mass_kg"]   = round(entry.get("boneMass", 0) / 1000, 2) if entry.get("boneMass") else ""
-            data["body_water_pct"] = entry.get("bodyWater", "")
-        else:
-            data["weight_kg"]      = round(entries.get("weight", 0) / 1000, 2) if entries.get("weight") else ""
-            data["bmi"]            = entries.get("bmi", "")
-            data["body_fat_pct"]   = entries.get("bodyFat", "")
-            data["muscle_mass_kg"] = round(entries.get("muscleMass", 0) / 1000, 2) if entries.get("muscleMass") else ""
-            data["bone_mass_kg"]   = round(entries.get("boneMass", 0) / 1000, 2) if entries.get("boneMass") else ""
-            data["body_water_pct"] = entries.get("bodyWater", "")
-    except Exception:
-        for k in ["weight_kg","bmi","body_fat_pct","muscle_mass_kg","bone_mass_kg","body_water_pct"]:
-            data.setdefault(k, "")
-
     return data
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RENPHO CSV
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Map from possible Renpho CSV column names → our internal keys
+RENPHO_COL_MAP = {
+    "weight(kg)":       "weight_kg",
+    "weight":           "weight_kg",
+    "bmi":              "bmi",
+    "body fat(%)":      "body_fat_pct",
+    "body fat":         "body_fat_pct",
+    "muscle mass(kg)":  "muscle_mass_kg",
+    "muscle mass":      "muscle_mass_kg",
+    "bone mass(kg)":    "bone_mass_kg",
+    "bone mass":        "bone_mass_kg",
+    "body water(%)":    "body_water_pct",
+    "body water":       "body_water_pct",
+    "visceral fat":     "visceral_fat",
+    "bmr(kcal)":        "bmr_kcal",
+    "bmr":              "bmr_kcal",
+    "metabolic age":    "metabolic_age",
+}
+
+def load_renpho_csv() -> dict:
+    """Load all Renpho CSV files in the repo, return dict keyed by date."""
+    files = glob.glob(RENPHO_CSV_GLOB)
+    if not files:
+        print("  No Renpho CSV file found — body composition columns will be empty.")
+        return {}
+
+    by_date = {}
+    for filepath in files:
+        try:
+            with open(filepath, newline="", encoding="utf-8-sig") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    # Normalise header names to lowercase stripped
+                    norm = {k.lower().strip(): v for k, v in row.items()}
+
+                    # Find the date column
+                    date_str = norm.get("time of measurement") or norm.get("date") or norm.get("measurement time")
+                    if not date_str:
+                        continue
+
+                    # Parse date — handle common formats
+                    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y/%m/%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y"):
+                        try:
+                            date = datetime.datetime.strptime(date_str.strip(), fmt).strftime("%Y-%m-%d")
+                            break
+                        except ValueError:
+                            continue
+                    else:
+                        continue
+
+                    entry = {}
+                    for csv_col, our_key in RENPHO_COL_MAP.items():
+                        val = norm.get(csv_col, "")
+                        if val:
+                            try:
+                                entry[our_key] = round(float(val), 2)
+                            except ValueError:
+                                entry[our_key] = val
+
+                    if entry:
+                        by_date[date] = entry  # most recent entry wins if duplicates
+
+        except Exception as e:
+            print(f"  ⚠️  Could not read {filepath}: {e}")
+
+    print(f"  Loaded {len(by_date)} Renpho measurement(s) from {len(files)} file(s)")
+    return by_date
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -214,7 +265,7 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
 
 def style_header(ws):
     for col_idx, (_, label) in enumerate(COLUMNS, start=1):
-        colour = "1F4E79" if col_idx < BODY_START_COL else "1E5631"
+        colour = "1F4E79" if col_idx < RENPHO_START_COL else "1E5631"
         cell = ws.cell(row=1, column=col_idx, value=label)
         cell.fill = PatternFill("solid", fgColor=colour)
         cell.font = Font(bold=True, color="FFFFFF", size=11)
@@ -222,8 +273,8 @@ def style_header(ws):
         ws.column_dimensions[get_column_letter(col_idx)].width = max(len(label) + 4, 14)
 
 
-def get_existing_dates(ws) -> set:
-    return {ws.cell(row=r, column=1).value for r in range(2, ws.max_row + 1)}
+def get_existing_dates(ws) -> dict:
+    return {ws.cell(row=r, column=1).value: r for r in range(2, ws.max_row + 1)}
 
 
 def append_row(ws, data: dict):
@@ -232,19 +283,18 @@ def append_row(ws, data: dict):
     last_row = ws.max_row
     if last_row % 2 == 0:
         for col_idx in range(1, len(COLUMNS) + 1):
-            colour = "D6E4F0" if col_idx < BODY_START_COL else "D8F0DC"
+            colour = "D6E4F0" if col_idx < RENPHO_START_COL else "D8F0DC"
             ws.cell(row=last_row, column=col_idx).fill = PatternFill("solid", fgColor=colour)
 
 
 def update_row(ws, row_num: int, data: dict):
-    """Update all columns for an existing row."""
     for col_idx, (key, _) in enumerate(COLUMNS, start=1):
         val = data.get(key, "")
         if val != "":
             ws.cell(row=row_num, column=col_idx).value = val
 
 
-def save_to_excel(all_data: list) -> int:
+def save_to_excel(garmin_data: list, renpho_by_date: dict) -> tuple:
     if os.path.exists(EXCEL_FILE):
         wb = openpyxl.load_workbook(EXCEL_FILE)
         ws = wb.active
@@ -254,31 +304,36 @@ def save_to_excel(all_data: list) -> int:
         ws.title = "Health Data"
         style_header(ws)
 
-    date_to_row = {
-        ws.cell(row=r, column=1).value: r
-        for r in range(2, ws.max_row + 1)
-    }
+    date_to_row = get_existing_dates(ws)
 
-    added = 0
-    for row_data in sorted(all_data, key=lambda x: x["date"]):
+    garmin_added = 0
+    renpho_merged = 0
+
+    for row_data in sorted(garmin_data, key=lambda x: x["date"]):
         date = row_data["date"]
+
+        # Merge Renpho data if available
+        if date in renpho_by_date:
+            row_data.update(renpho_by_date[date])
+            renpho_merged += 1
+
         if date not in date_to_row:
             append_row(ws, row_data)
             date_to_row[date] = ws.max_row
-            added += 1
+            garmin_added += 1
         else:
             update_row(ws, date_to_row[date], row_data)
 
     ws.freeze_panes = "A2"
     wb.save(EXCEL_FILE)
-    return added
+    return garmin_added, renpho_merged
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # EMAIL
 # ══════════════════════════════════════════════════════════════════════════════
 
-def send_email(added: int):
+def send_email(garmin_added: int, renpho_merged: int):
     sender       = os.environ.get("EMAIL_FROM")
     app_password = os.environ.get("EMAIL_APP_PASSWORD")
     recipient    = os.environ.get("EMAIL_TO")
@@ -297,10 +352,10 @@ def send_email(added: int):
 
 Your daily health data export is attached ({today}).
 
-{added} new row(s) added today.
+  • Garmin:  {garmin_added} new row(s)
+  • Renpho:  {renpho_merged} day(s) with body composition data
 
-Blue columns = Garmin activity & wellness data
-Green columns = Weight & body composition (synced via WeightSyncr)
+Blue columns = Garmin | Green columns = Renpho (from CSV)
 
 — Your Health Exporter
 """
@@ -329,24 +384,29 @@ def main():
     print("   Health Data → Excel Exporter")
     print("=" * 50)
 
-    print(f"\n📊 Fetching data (last {DAYS_TO_FETCH} days)...")
+    # Garmin
+    print(f"\n📊 Fetching Garmin data (last {DAYS_TO_FETCH} days)...")
     client = garmin_login()
-
     today = datetime.date.today()
     dates = [today - datetime.timedelta(days=i) for i in range(DAYS_TO_FETCH - 1, -1, -1)]
-
-    all_data = []
+    garmin_data = []
     for date in dates:
         print(f"  📅 {date.isoformat()}...", end=" ", flush=True)
-        all_data.append(fetch_garmin_day(client, date))
+        garmin_data.append(fetch_garmin_day(client, date))
         print("done")
 
-    print(f"\n💾 Saving to {EXCEL_FILE}...")
-    added = save_to_excel(all_data)
-    print(f"✅ {added} new row(s) added → {os.path.abspath(EXCEL_FILE)}")
+    # Renpho CSV
+    print(f"\n⚖️  Loading Renpho CSV...")
+    renpho_by_date = load_renpho_csv()
 
+    # Save
+    print(f"\n💾 Saving to {EXCEL_FILE}...")
+    garmin_added, renpho_merged = save_to_excel(garmin_data, renpho_by_date)
+    print(f"✅ Garmin: {garmin_added} new row(s) | Renpho: {renpho_merged} day(s) merged")
+
+    # Email
     print("\n📧 Sending email...")
-    send_email(added)
+    send_email(garmin_added, renpho_merged)
 
 
 if __name__ == "__main__":
