@@ -4,7 +4,7 @@ Garmin Health Data → Excel Weekly Exporter
 Pulls comprehensive data from Garmin Connect including:
 - Daily: steps, distance, calories, floors, HR, stress, body battery
 - Sleep: hours, score, deep/light/REM/awake
-- Activity: type, name, duration, distance, HR, calories
+- Up to 3 activities per day with full stats for each
 - Running: pace, cadence, power, stamina, training effect, dynamics
 - Advanced: VO2 max, elevation, HRV, SpO2, respiration, hydration, race predictions
 
@@ -42,9 +42,47 @@ except ImportError:
 
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
-EXCEL_FILE    = "health_data.xlsx"
-DAYS_TO_FETCH = 7
+EXCEL_FILE      = "health_data.xlsx"
+DAYS_TO_FETCH   = 7
+MAX_ACTIVITIES  = 3
 # ─────────────────────────────────────────────────────────────────────────────
+
+
+# ── Activity columns (repeated per activity slot) ─────────────────────────────
+def activity_columns(n: int) -> list:
+    prefix = f"act{n}_"
+    label  = f"Activity {n}: "
+    return [
+        (prefix + "type",                   label + "Type"),
+        (prefix + "name",                   label + "Name"),
+        (prefix + "start_time",             label + "Start Time"),
+        (prefix + "duration",               label + "Duration (min)"),
+        (prefix + "distance",               label + "Distance (km)"),
+        (prefix + "avg_hr",                 label + "Avg HR"),
+        (prefix + "max_hr",                 label + "Max HR"),
+        (prefix + "calories",               label + "Calories"),
+        (prefix + "training_load",          label + "Training Load"),
+        (prefix + "avg_pace",               label + "Avg Pace (min/km)"),
+        (prefix + "best_pace",              label + "Best Pace (min/km)"),
+        (prefix + "avg_cadence",            label + "Avg Cadence (spm)"),
+        (prefix + "max_cadence",            label + "Max Cadence (spm)"),
+        (prefix + "avg_power",              label + "Avg Power (W)"),
+        (prefix + "max_power",              label + "Max Power (W)"),
+        (prefix + "elevation_gain",         label + "Elevation Gain (m)"),
+        (prefix + "elevation_loss",         label + "Elevation Loss (m)"),
+        (prefix + "aerobic_effect",         label + "Aerobic Effect"),
+        (prefix + "anaerobic_effect",       label + "Anaerobic Effect"),
+        (prefix + "exercise_load",          label + "Exercise Load"),
+        (prefix + "primary_benefit",        label + "Primary Benefit"),
+        (prefix + "stamina_start",          label + "Stamina Start (%)"),
+        (prefix + "stamina_end",            label + "Stamina End (%)"),
+        (prefix + "stamina_min",            label + "Stamina Min (%)"),
+        (prefix + "avg_vert_osc",           label + "Avg Vertical Osc (cm)"),
+        (prefix + "avg_vert_ratio",         label + "Avg Vertical Ratio (%)"),
+        (prefix + "avg_ground_contact",     label + "Avg Ground Contact (ms)"),
+        (prefix + "avg_ground_balance",     label + "Avg Ground Balance (%)"),
+        (prefix + "avg_stride_length",      label + "Avg Stride Length (m)"),
+    ]
 
 
 COLUMNS = [
@@ -88,70 +126,27 @@ COLUMNS = [
     ("race_10k",                "Race Pred 10K"),
     ("race_half",               "Race Pred Half Marathon"),
     ("race_marathon",           "Race Pred Marathon"),
-
-    # ── Activity Summary ──
-    ("activity_type",           "Activity Type"),
-    ("activity_name",           "Activity Name"),
-    ("activity_start_time",     "Activity Start Time"),
-    ("activity_duration",       "Activity Duration (min)"),
-    ("activity_distance",       "Activity Distance (km)"),
-    ("activity_avg_hr",         "Activity Avg HR"),
-    ("activity_max_hr",         "Activity Max HR"),
-    ("activity_calories",       "Activity Calories"),
-    ("activity_training_load",  "Training Load"),
-
-    # ── Running: Pace ──
-    ("avg_pace",                "Avg Pace (min/km)"),
-    ("best_pace",               "Best Pace (min/km)"),
-
-    # ── Running: Cadence ──
-    ("avg_cadence",             "Avg Cadence (spm)"),
-    ("max_cadence",             "Max Cadence (spm)"),
-
-    # ── Running: Power ──
-    ("avg_power",               "Avg Power (W)"),
-    ("max_power",               "Max Power (W)"),
-
-    # ── Running: Stamina ──
-    ("stamina_start",           "Stamina Start (%)"),
-    ("stamina_end",             "Stamina End (%)"),
-    ("stamina_min",             "Stamina Min (%)"),
-
-    # ── Running: Training Effect ──
-    ("aerobic_effect",          "Aerobic Effect"),
-    ("anaerobic_effect",        "Anaerobic Effect"),
-    ("exercise_load",           "Exercise Load"),
-    ("primary_benefit",         "Primary Benefit"),
-
-    # ── Running: Dynamics ──
-    ("avg_vertical_oscillation","Avg Vertical Oscillation (cm)"),
-    ("avg_vertical_ratio",      "Avg Vertical Ratio (%)"),
-    ("avg_ground_contact",      "Avg Ground Contact (ms)"),
-    ("avg_ground_balance",      "Avg Ground Balance (%)"),
-    ("avg_stride_length",       "Avg Stride Length (m)"),
-
-    # ── Elevation ──
-    ("elevation_gain",          "Elevation Gain (m)"),
-    ("elevation_loss",          "Elevation Loss (m)"),
-    ("min_elevation",           "Min Elevation (m)"),
-    ("max_elevation",           "Max Elevation (m)"),
 ]
 
-# Column group colours (by start key)
+# Add up to 3 activity slot columns
+for i in range(1, MAX_ACTIVITIES + 1):
+    COLUMNS.extend(activity_columns(i))
+
+
+# ── Column group colours ──────────────────────────────────────────────────────
 COLUMN_GROUPS = [
-    ("date",                "2C3E50"),  # dark grey — date
-    ("steps",               "1F4E79"),  # dark blue — daily activity
-    ("resting_heart_rate",  "922B21"),  # dark red — heart rate
-    ("avg_stress",          "1A5276"),  # navy — wellness
-    ("sleep_hours",         "4A235A"),  # purple — sleep
-    ("vo2_max",             "145A32"),  # dark green — VO2/race
-    ("activity_type",       "784212"),  # brown — activity summary
-    ("avg_pace",            "0E6655"),  # teal — running stats
-    ("elevation_gain",      "4D5656"),  # slate — elevation
+    ("date",                "2C3E50"),
+    ("steps",               "1F4E79"),
+    ("resting_heart_rate",  "922B21"),
+    ("avg_stress",          "1A5276"),
+    ("sleep_hours",         "4A235A"),
+    ("vo2_max",             "145A32"),
+    ("act1_type",           "784212"),
+    ("act2_type",           "6E2F00"),
+    ("act3_type",           "5D2506"),
 ]
 
 def get_col_colour(col_idx: int) -> str:
-    """Return header colour for a given 1-based column index."""
     colour = "2C3E50"
     for key, hex_colour in COLUMN_GROUPS:
         group_idx = next((i + 1 for i, (k, _) in enumerate(COLUMNS) if k == key), None)
@@ -160,15 +155,15 @@ def get_col_colour(col_idx: int) -> str:
     return colour
 
 ROW_TINTS = {
+    "2C3E50": "F2F3F4",
     "1F4E79": "D6E4F0",
     "922B21": "FADBD8",
     "1A5276": "D4E6F1",
     "4A235A": "E8DAEF",
     "145A32": "D5F5E3",
     "784212": "FAE5D3",
-    "0E6655": "D1F2EB",
-    "4D5656": "EAECEE",
-    "2C3E50": "F2F3F4",
+    "6E2F00": "F5CBA7",
+    "5D2506": "F0B27A",
 }
 
 def get_row_tint(col_idx: int) -> str:
@@ -179,25 +174,23 @@ def get_row_tint(col_idx: int) -> str:
 # HELPERS
 # ══════════════════════════════════════════════════════════════════════════════
 
-def seconds_to_pace(seconds_per_km) -> str:
-    """Convert seconds/km to mm:ss string."""
-    if not seconds_per_km:
+def seconds_to_pace(spk) -> str:
+    if not spk:
         return ""
     try:
-        total = int(seconds_per_km)
-        return f"{total // 60}:{total % 60:02d}"
+        t = int(spk)
+        return f"{t // 60}:{t % 60:02d}"
     except Exception:
         return ""
 
-def seconds_to_time(seconds) -> str:
-    """Convert seconds to hh:mm:ss string."""
-    if not seconds:
+def seconds_to_time(s) -> str:
+    if not s:
         return ""
     try:
-        h = int(seconds) // 3600
-        m = (int(seconds) % 3600) // 60
-        s = int(seconds) % 60
-        return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+        h = int(s) // 3600
+        m = (int(s) % 3600) // 60
+        sc = int(s) % 60
+        return f"{h}:{m:02d}:{sc:02d}" if h else f"{m}:{sc:02d}"
     except Exception:
         return ""
 
@@ -215,6 +208,50 @@ def garmin_login():
     return client
 
 
+def parse_activity_to_dict(act, details, prefix) -> dict:
+    """Parse a single activity into a prefixed dict."""
+    row = {}
+    row[prefix + "type"]          = act.get("activityType", {}).get("typeKey", "")
+    row[prefix + "name"]          = act.get("activityName", "")
+    row[prefix + "start_time"]    = act.get("startTimeLocal", "")[11:16]
+    row[prefix + "duration"]      = round((act.get("duration", 0) or 0) / 60, 1)
+    row[prefix + "distance"]      = round((act.get("distance", 0) or 0) / 1000, 2)
+    row[prefix + "avg_hr"]        = act.get("averageHR", "")
+    row[prefix + "max_hr"]        = act.get("maxHR", "")
+    row[prefix + "calories"]      = act.get("calories", "")
+    row[prefix + "training_load"] = act.get("activityTrainingLoad", "")
+    row[prefix + "avg_cadence"]   = act.get("averageRunningCadenceInStepsPerMinute", "") or \
+                                    act.get("averageBikingCadenceInRevPerMinute", "")
+    row[prefix + "max_cadence"]   = act.get("maxRunningCadenceInStepsPerMinute", "") or \
+                                    act.get("maxBikingCadenceInRevPerMinute", "")
+    row[prefix + "avg_power"]     = act.get("avgPower", "")
+    row[prefix + "max_power"]     = act.get("maxPower", "")
+    row[prefix + "elevation_gain"]= act.get("elevationGain", "")
+    row[prefix + "elevation_loss"]= act.get("elevationLoss", "")
+
+    avg_speed = act.get("averageSpeed", 0)
+    max_speed = act.get("maxSpeed", 0)
+    row[prefix + "avg_pace"]  = seconds_to_pace(1000 / avg_speed) if avg_speed else ""
+    row[prefix + "best_pace"] = seconds_to_pace(1000 / max_speed) if max_speed else ""
+
+    if details:
+        summary = details.get("summaryDTO", {})
+        row[prefix + "aerobic_effect"]      = summary.get("aerobicTrainingEffect", "")
+        row[prefix + "anaerobic_effect"]    = summary.get("anaerobicTrainingEffect", "")
+        row[prefix + "exercise_load"]       = summary.get("activityTrainingLoad", "")
+        row[prefix + "primary_benefit"]     = summary.get("aerobicTrainingEffectMessage", "")
+        row[prefix + "stamina_start"]       = summary.get("startStamina", "")
+        row[prefix + "stamina_end"]         = summary.get("endStamina", "")
+        row[prefix + "stamina_min"]         = summary.get("minStamina", "")
+        row[prefix + "avg_vert_osc"]        = summary.get("avgVerticalOscillation", "")
+        row[prefix + "avg_vert_ratio"]      = summary.get("avgVerticalRatio", "")
+        row[prefix + "avg_ground_contact"]  = summary.get("avgGroundContactTime", "")
+        row[prefix + "avg_ground_balance"]  = summary.get("avgGroundContactBalance", "")
+        row[prefix + "avg_stride_length"]   = round(summary.get("avgStrideLength", 0) / 100, 2) \
+                                              if summary.get("avgStrideLength") else ""
+    return row
+
+
 def fetch_garmin_day(client, date: datetime.date) -> dict:
     d = date.isoformat()
     data = {"date": d}
@@ -228,24 +265,23 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
 
     try:
         daily = client.get_stats(d)
-        data["distance_km"]        = round(daily.get("totalDistanceMeters", 0) / 1000, 2)
-        data["active_calories"]    = daily.get("activeKilocalories", "")
-        data["total_calories"]     = daily.get("totalKilocalories", "")
-        data["floors_climbed"]     = daily.get("floorsAscended", "")
-        data["active_minutes"]     = daily.get("highlyActiveSeconds", 0) // 60
-        data["resting_heart_rate"] = daily.get("restingHeartRate", "")
-        data["avg_stress"]         = daily.get("averageStressLevel", "")
-        data["body_battery_high"]  = daily.get("bodyBatteryHighestValue", "")
-        data["body_battery_low"]   = daily.get("bodyBatteryLowestValue", "")
-        data["hydration_goal_ml"]  = daily.get("dailyHydrationGoal", "")
-        data["hydration_intake_ml"]= daily.get("totalHydrationIntakeInOz", "")
+        data["distance_km"]         = round(daily.get("totalDistanceMeters", 0) / 1000, 2)
+        data["active_calories"]     = daily.get("activeKilocalories", "")
+        data["total_calories"]      = daily.get("totalKilocalories", "")
+        data["floors_climbed"]      = daily.get("floorsAscended", "")
+        data["active_minutes"]      = daily.get("highlyActiveSeconds", 0) // 60
+        data["resting_heart_rate"]  = daily.get("restingHeartRate", "")
+        data["avg_stress"]          = daily.get("averageStressLevel", "")
+        data["body_battery_high"]   = daily.get("bodyBatteryHighestValue", "")
+        data["body_battery_low"]    = daily.get("bodyBatteryLowestValue", "")
+        data["hydration_goal_ml"]   = daily.get("dailyHydrationGoal", "")
+        data["hydration_intake_ml"] = daily.get("totalHydrationIntakeInOz", "")
     except Exception:
         for k in ["distance_km","active_calories","total_calories","floors_climbed","active_minutes",
                   "resting_heart_rate","avg_stress","body_battery_high","body_battery_low",
                   "hydration_goal_ml","hydration_intake_ml"]:
             data.setdefault(k, "")
 
-    # ── Heart rate ──
     try:
         hr = client.get_heart_rates(d)
         data["max_heart_rate"] = hr.get("maxHeartRate", "")
@@ -254,28 +290,24 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
         data["max_heart_rate"] = ""
         data["min_heart_rate"] = ""
 
-    # ── HRV ──
     try:
         hrv = client.get_hrv_data(d)
         data["hrv"] = hrv.get("hrvSummary", {}).get("weeklyAvg", "") if hrv else ""
     except Exception:
         data["hrv"] = ""
 
-    # ── SpO2 ──
     try:
         spo2 = client.get_spo2_data(d)
         data["spo2"] = spo2.get("averageSpO2", "") if spo2 else ""
     except Exception:
         data["spo2"] = ""
 
-    # ── Respiration ──
     try:
         resp = client.get_respiration_data(d)
         data["respiration_avg"] = resp.get("avgWakingRespirationValue", "") if resp else ""
     except Exception:
         data["respiration_avg"] = ""
 
-    # ── Sleep ──
     try:
         sleep   = client.get_sleep_data(d)
         summary = sleep.get("dailySleepDTO", {})
@@ -291,15 +323,11 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
         for k in ["sleep_hours","sleep_score","deep_sleep_min","light_sleep_min","rem_sleep_min","awake_min"]:
             data.setdefault(k, "")
 
-    # ── VO2 Max & Race Predictions ──
     try:
         vo2 = client.get_max_metrics(d)
         if vo2 and len(vo2) > 0:
             v = vo2[0]
             data["vo2_max"]      = v.get("generic", {}).get("vo2MaxPreciseValue", "")
-            generic = v.get("generic", {})
-            preds = generic.get("vo2MaxPreciseValue", "")
-            # Race predictions
             run_race = v.get("running", {})
             data["race_5k"]       = seconds_to_time(run_race.get("vo2MaxRacePredictions", {}).get("5K"))
             data["race_10k"]      = seconds_to_time(run_race.get("vo2MaxRacePredictions", {}).get("10K"))
@@ -309,81 +337,20 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
         for k in ["vo2_max","race_5k","race_10k","race_half","race_marathon"]:
             data.setdefault(k, "")
 
-    # ── Activity ──
+    # ── Up to 3 activities ──
     try:
         activities = client.get_activities_by_date(d, d)
-        if activities:
-            act = activities[0]
+        for i, act in enumerate(activities[:MAX_ACTIVITIES], start=1):
+            prefix = f"act{i}_"
             act_id = act.get("activityId")
-
-            data["activity_type"]          = act.get("activityType", {}).get("typeKey", "")
-            data["activity_name"]          = act.get("activityName", "")
-            data["activity_start_time"]    = act.get("startTimeLocal", "")
-            data["activity_duration"]      = round((act.get("duration", 0) or 0) / 60, 1)
-            data["activity_distance"]      = round((act.get("distance", 0) or 0) / 1000, 2)
-            data["activity_avg_hr"]        = act.get("averageHR", "")
-            data["activity_max_hr"]        = act.get("maxHR", "")
-            data["activity_calories"]      = act.get("calories", "")
-            data["activity_training_load"] = act.get("activityTrainingLoad", "")
-            data["avg_cadence"]            = act.get("averageRunningCadenceInStepsPerMinute", "") or act.get("averageBikingCadenceInRevPerMinute", "")
-            data["max_cadence"]            = act.get("maxRunningCadenceInStepsPerMinute", "") or act.get("maxBikingCadenceInRevPerMinute", "")
-            data["avg_power"]              = act.get("avgPower", "")
-            data["max_power"]              = act.get("maxPower", "")
-            data["elevation_gain"]         = act.get("elevationGain", "")
-            data["elevation_loss"]         = act.get("elevationLoss", "")
-            data["min_elevation"]          = act.get("minElevation", "")
-            data["max_elevation"]          = act.get("maxElevation", "")
-
-            # Pace (convert speed m/s → pace min/km)
-            avg_speed = act.get("averageSpeed", 0)
-            max_speed = act.get("maxSpeed", 0)
-            data["avg_pace"]  = seconds_to_pace(1000 / avg_speed) if avg_speed else ""
-            data["best_pace"] = seconds_to_pace(1000 / max_speed) if max_speed else ""
-
-            # Detailed activity data
-            if act_id:
-                try:
-                    details = client.get_activity(act_id)
-                    summary = details.get("summaryDTO", {})
-
-                    data["aerobic_effect"]           = summary.get("aerobicTrainingEffect", "")
-                    data["anaerobic_effect"]          = summary.get("anaerobicTrainingEffect", "")
-                    data["exercise_load"]             = summary.get("activityTrainingLoad", "")
-                    data["primary_benefit"]           = summary.get("aerobicTrainingEffectMessage", "")
-                    data["avg_vertical_oscillation"]  = summary.get("avgVerticalOscillation", "")
-                    data["avg_vertical_ratio"]        = summary.get("avgVerticalRatio", "")
-                    data["avg_ground_contact"]        = summary.get("avgGroundContactTime", "")
-                    data["avg_ground_balance"]        = summary.get("avgGroundContactBalance", "")
-                    data["avg_stride_length"]         = round(summary.get("avgStrideLength", 0) / 100, 2) \
-                                                        if summary.get("avgStrideLength") else ""
-
-                    # Stamina
-                    data["stamina_start"] = summary.get("startStamina", "")
-                    data["stamina_end"]   = summary.get("endStamina", "")
-                    data["stamina_min"]   = summary.get("minStamina", "")
-                except Exception:
-                    pass
-
-        else:
-            for k in ["activity_type","activity_name","activity_start_time","activity_duration",
-                      "activity_distance","activity_avg_hr","activity_max_hr","activity_calories",
-                      "activity_training_load","avg_pace","best_pace","avg_cadence","max_cadence",
-                      "avg_power","max_power","stamina_start","stamina_end","stamina_min",
-                      "aerobic_effect","anaerobic_effect","exercise_load","primary_benefit",
-                      "avg_vertical_oscillation","avg_vertical_ratio","avg_ground_contact",
-                      "avg_ground_balance","avg_stride_length","elevation_gain","elevation_loss",
-                      "min_elevation","max_elevation"]:
-                data[k] = ""
+            details = None
+            try:
+                details = client.get_activity(act_id)
+            except Exception:
+                pass
+            data.update(parse_activity_to_dict(act, details, prefix))
     except Exception:
-        for k in ["activity_type","activity_name","activity_start_time","activity_duration",
-                  "activity_distance","activity_avg_hr","activity_max_hr","activity_calories",
-                  "activity_training_load","avg_pace","best_pace","avg_cadence","max_cadence",
-                  "avg_power","max_power","stamina_start","stamina_end","stamina_min",
-                  "aerobic_effect","anaerobic_effect","exercise_load","primary_benefit",
-                  "avg_vertical_oscillation","avg_vertical_ratio","avg_ground_contact",
-                  "avg_ground_balance","avg_stride_length","elevation_gain","elevation_loss",
-                  "min_elevation","max_elevation"]:
-            data.setdefault(k, "")
+        pass
 
     return data
 
@@ -474,9 +441,7 @@ Your weekly Garmin data export is attached ({today}).
 
 {added} new row(s) added this week.
 
-Columns include: daily activity, heart rate, HRV, SpO2, sleep, VO2 max,
-race predictions, running dynamics, training effect, power, cadence,
-stamina, pace and elevation.
+Up to 3 activities per day are included with full stats for each.
 
 — Your Health Exporter
 """
