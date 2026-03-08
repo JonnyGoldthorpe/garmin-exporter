@@ -2,7 +2,7 @@ name: Daily Health Export
 
 on:
   schedule:
-    - cron: '0 7 * * *'
+    - cron: '0 17 * * 0'
   workflow_dispatch:
 
 jobs:
@@ -18,32 +18,10 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Test Renpho login
-        env:
-          RENPHO_EMAIL: ${{ secrets.RENPHO_EMAIL }}
-          RENPHO_PASSWORD: ${{ secrets.RENPHO_PASSWORD }}
-        run: |
-          python - <<'EOF'
-          import hashlib, requests, os
-
-          email = os.environ["RENPHO_EMAIL"]
-          password = os.environ["RENPHO_PASSWORD"]
-          hashed = hashlib.md5(password.encode()).hexdigest()
-
-          resp = requests.post(
-              "https://renpho.qnclouds.com/api/v3/users/sign_in.json?app_id=Renpho",
-              data={"secure_flag": 1, "email": email, "password": hashed}
-          )
-          print("Status:", resp.status_code)
-          print("Response:", resp.text[:500])
-          EOF
-
       - name: Run exporter
         env:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
           GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
-          RENPHO_EMAIL: ${{ secrets.RENPHO_EMAIL }}
-          RENPHO_PASSWORD: ${{ secrets.RENPHO_PASSWORD }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
