@@ -1,12 +1,9 @@
 """
 Garmin Health Data → Excel Weekly Exporter
 -------------------------------------------
-Pulls comprehensive data from Garmin Connect including:
-- Daily: steps, distance, calories, floors, HR, stress, body battery
-- Sleep: hours, score, deep/light/REM/awake
-- Up to 3 activities per day with full stats for each
-- Running: pace, cadence, power, stamina, training effect, dynamics
-- Advanced: VO2 max, elevation, HRV, SpO2, respiration, hydration, race predictions
+Pulls comprehensive data from Garmin Connect and emails:
+  1. health_data.xlsx — all stats in one sheet
+  2. fit_files.zip    — raw FIT files for each activity (for detailed analysis)
 
 Requirements:
     pip install garminconnect openpyxl
@@ -20,8 +17,10 @@ Environment variables (set in GitHub Secrets):
 """
 
 import datetime
+import io
 import os
 import smtplib
+import zipfile
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
@@ -48,7 +47,6 @@ MAX_ACTIVITIES  = 3
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-# ── Activity columns (repeated per activity slot) ─────────────────────────────
 def activity_columns(n: int) -> list:
     prefix = f"act{n}_"
     label  = f"Activity {n}: "
@@ -86,24 +84,17 @@ def activity_columns(n: int) -> list:
 
 
 COLUMNS = [
-    # ── Date ──
     ("date",                    "Date"),
-
-    # ── Daily Activity ──
     ("steps",                   "Steps"),
     ("distance_km",             "Distance (km)"),
     ("active_calories",         "Active Calories"),
     ("total_calories",          "Total Calories"),
     ("floors_climbed",          "Floors Climbed"),
     ("active_minutes",          "Active Minutes"),
-
-    # ── Heart Rate ──
     ("resting_heart_rate",      "Resting HR"),
     ("min_heart_rate",          "Min HR"),
     ("max_heart_rate",          "Max HR"),
     ("hrv",                     "HRV"),
-
-    # ── Wellness ──
     ("avg_stress",              "Avg Stress"),
     ("body_battery_high",       "Body Battery High"),
     ("body_battery_low",        "Body Battery Low"),
@@ -111,29 +102,22 @@ COLUMNS = [
     ("respiration_avg",         "Avg Respiration"),
     ("hydration_goal_ml",       "Hydration Goal (ml)"),
     ("hydration_intake_ml",     "Hydration Intake (ml)"),
-
-    # ── Sleep ──
     ("sleep_hours",             "Sleep (hrs)"),
     ("sleep_score",             "Sleep Score"),
     ("deep_sleep_min",          "Deep Sleep (min)"),
     ("light_sleep_min",         "Light Sleep (min)"),
     ("rem_sleep_min",           "REM Sleep (min)"),
     ("awake_min",               "Awake (min)"),
-
-    # ── VO2 Max & Race Predictions ──
     ("vo2_max",                 "VO2 Max"),
     ("race_5k",                 "Race Pred 5K"),
     ("race_10k",                "Race Pred 10K"),
     ("race_half",               "Race Pred Half Marathon"),
     ("race_marathon",           "Race Pred Marathon"),
 ]
-
-# Add up to 3 activity slot columns
 for i in range(1, MAX_ACTIVITIES + 1):
     COLUMNS.extend(activity_columns(i))
 
 
-# ── Column group colours ──────────────────────────────────────────────────────
 COLUMN_GROUPS = [
     ("date",                "2C3E50"),
     ("steps",               "1F4E79"),
@@ -146,7 +130,7 @@ COLUMN_GROUPS = [
     ("act3_type",           "5D2506"),
 ]
 
-def get_col_colour(col_idx: int) -> str:
+def get_col_colour(col_idx):
     colour = "2C3E50"
     for key, hex_colour in COLUMN_GROUPS:
         group_idx = next((i + 1 for i, (k, _) in enumerate(COLUMNS) if k == key), None)
@@ -155,26 +139,16 @@ def get_col_colour(col_idx: int) -> str:
     return colour
 
 ROW_TINTS = {
-    "2C3E50": "F2F3F4",
-    "1F4E79": "D6E4F0",
-    "922B21": "FADBD8",
-    "1A5276": "D4E6F1",
-    "4A235A": "E8DAEF",
-    "145A32": "D5F5E3",
-    "784212": "FAE5D3",
-    "6E2F00": "F5CBA7",
-    "5D2506": "F0B27A",
+    "2C3E50": "F2F3F4", "1F4E79": "D6E4F0", "922B21": "FADBD8",
+    "1A5276": "D4E6F1", "4A235A": "E8DAEF", "145A32": "D5F5E3",
+    "784212": "FAE5D3", "6E2F00": "F5CBA7", "5D2506": "F0B27A",
 }
 
-def get_row_tint(col_idx: int) -> str:
+def get_row_tint(col_idx):
     return ROW_TINTS.get(get_col_colour(col_idx), "F2F3F4")
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# HELPERS
-# ══════════════════════════════════════════════════════════════════════════════
-
-def seconds_to_pace(spk) -> str:
+def seconds_to_pace(spk):
     if not spk:
         return ""
     try:
@@ -183,7 +157,7 @@ def seconds_to_pace(spk) -> str:
     except Exception:
         return ""
 
-def seconds_to_time(s) -> str:
+def seconds_to_time(s):
     if not s:
         return ""
     try:
@@ -195,10 +169,6 @@ def seconds_to_time(s) -> str:
         return ""
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# GARMIN
-# ══════════════════════════════════════════════════════════════════════════════
-
 def garmin_login():
     email    = os.environ.get("GARMIN_EMAIL")    or input("Garmin email: ")
     password = os.environ.get("GARMIN_PASSWORD") or getpass("Garmin password: ")
@@ -208,26 +178,25 @@ def garmin_login():
     return client
 
 
-def parse_activity_to_dict(act, details, prefix) -> dict:
-    """Parse a single activity into a prefixed dict."""
+def parse_activity_to_dict(act, details, prefix):
     row = {}
-    row[prefix + "type"]          = act.get("activityType", {}).get("typeKey", "")
-    row[prefix + "name"]          = act.get("activityName", "")
-    row[prefix + "start_time"]    = act.get("startTimeLocal", "")[11:16]
-    row[prefix + "duration"]      = round((act.get("duration", 0) or 0) / 60, 1)
-    row[prefix + "distance"]      = round((act.get("distance", 0) or 0) / 1000, 2)
-    row[prefix + "avg_hr"]        = act.get("averageHR", "")
-    row[prefix + "max_hr"]        = act.get("maxHR", "")
-    row[prefix + "calories"]      = act.get("calories", "")
-    row[prefix + "training_load"] = act.get("activityTrainingLoad", "")
-    row[prefix + "avg_cadence"]   = act.get("averageRunningCadenceInStepsPerMinute", "") or \
-                                    act.get("averageBikingCadenceInRevPerMinute", "")
-    row[prefix + "max_cadence"]   = act.get("maxRunningCadenceInStepsPerMinute", "") or \
-                                    act.get("maxBikingCadenceInRevPerMinute", "")
-    row[prefix + "avg_power"]     = act.get("avgPower", "")
-    row[prefix + "max_power"]     = act.get("maxPower", "")
-    row[prefix + "elevation_gain"]= act.get("elevationGain", "")
-    row[prefix + "elevation_loss"]= act.get("elevationLoss", "")
+    row[prefix + "type"]           = act.get("activityType", {}).get("typeKey", "")
+    row[prefix + "name"]           = act.get("activityName", "")
+    row[prefix + "start_time"]     = act.get("startTimeLocal", "")[11:16]
+    row[prefix + "duration"]       = round((act.get("duration", 0) or 0) / 60, 1)
+    row[prefix + "distance"]       = round((act.get("distance", 0) or 0) / 1000, 2)
+    row[prefix + "avg_hr"]         = act.get("averageHR", "")
+    row[prefix + "max_hr"]         = act.get("maxHR", "")
+    row[prefix + "calories"]       = act.get("calories", "")
+    row[prefix + "training_load"]  = act.get("activityTrainingLoad", "")
+    row[prefix + "avg_cadence"]    = act.get("averageRunningCadenceInStepsPerMinute", "") or \
+                                     act.get("averageBikingCadenceInRevPerMinute", "")
+    row[prefix + "max_cadence"]    = act.get("maxRunningCadenceInStepsPerMinute", "") or \
+                                     act.get("maxBikingCadenceInRevPerMinute", "")
+    row[prefix + "avg_power"]      = act.get("avgPower", "")
+    row[prefix + "max_power"]      = act.get("maxPower", "")
+    row[prefix + "elevation_gain"] = act.get("elevationGain", "")
+    row[prefix + "elevation_loss"] = act.get("elevationLoss", "")
 
     avg_speed = act.get("averageSpeed", 0)
     max_speed = act.get("maxSpeed", 0)
@@ -236,27 +205,26 @@ def parse_activity_to_dict(act, details, prefix) -> dict:
 
     if details:
         summary = details.get("summaryDTO", {})
-        row[prefix + "aerobic_effect"]      = summary.get("aerobicTrainingEffect", "")
-        row[prefix + "anaerobic_effect"]    = summary.get("anaerobicTrainingEffect", "")
-        row[prefix + "exercise_load"]       = summary.get("activityTrainingLoad", "")
-        row[prefix + "primary_benefit"]     = summary.get("aerobicTrainingEffectMessage", "")
-        row[prefix + "stamina_start"]       = summary.get("startStamina", "")
-        row[prefix + "stamina_end"]         = summary.get("endStamina", "")
-        row[prefix + "stamina_min"]         = summary.get("minStamina", "")
-        row[prefix + "avg_vert_osc"]        = summary.get("avgVerticalOscillation", "")
-        row[prefix + "avg_vert_ratio"]      = summary.get("avgVerticalRatio", "")
-        row[prefix + "avg_ground_contact"]  = summary.get("avgGroundContactTime", "")
-        row[prefix + "avg_ground_balance"]  = summary.get("avgGroundContactBalance", "")
-        row[prefix + "avg_stride_length"]   = round(summary.get("avgStrideLength", 0) / 100, 2) \
-                                              if summary.get("avgStrideLength") else ""
+        row[prefix + "aerobic_effect"]     = summary.get("aerobicTrainingEffect", "")
+        row[prefix + "anaerobic_effect"]   = summary.get("anaerobicTrainingEffect", "")
+        row[prefix + "exercise_load"]      = summary.get("activityTrainingLoad", "")
+        row[prefix + "primary_benefit"]    = summary.get("aerobicTrainingEffectMessage", "")
+        row[prefix + "stamina_start"]      = summary.get("startStamina", "")
+        row[prefix + "stamina_end"]        = summary.get("endStamina", "")
+        row[prefix + "stamina_min"]        = summary.get("minStamina", "")
+        row[prefix + "avg_vert_osc"]       = summary.get("avgVerticalOscillation", "")
+        row[prefix + "avg_vert_ratio"]     = summary.get("avgVerticalRatio", "")
+        row[prefix + "avg_ground_contact"] = summary.get("avgGroundContactTime", "")
+        row[prefix + "avg_ground_balance"] = summary.get("avgGroundContactBalance", "")
+        row[prefix + "avg_stride_length"]  = round(summary.get("avgStrideLength", 0) / 100, 2) \
+                                             if summary.get("avgStrideLength") else ""
     return row
 
 
-def fetch_garmin_day(client, date: datetime.date) -> dict:
+def fetch_garmin_day(client, date):
     d = date.isoformat()
     data = {"date": d}
 
-    # ── Daily stats ──
     try:
         steps_data = client.get_steps_data(d)
         data["steps"] = sum(s.get("steps", 0) for s in steps_data) if steps_data else 0
@@ -327,7 +295,7 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
         vo2 = client.get_max_metrics(d)
         if vo2 and len(vo2) > 0:
             v = vo2[0]
-            data["vo2_max"]      = v.get("generic", {}).get("vo2MaxPreciseValue", "")
+            data["vo2_max"]       = v.get("generic", {}).get("vo2MaxPreciseValue", "")
             run_race = v.get("running", {})
             data["race_5k"]       = seconds_to_time(run_race.get("vo2MaxRacePredictions", {}).get("5K"))
             data["race_10k"]      = seconds_to_time(run_race.get("vo2MaxRacePredictions", {}).get("10K"))
@@ -337,7 +305,6 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
         for k in ["vo2_max","race_5k","race_10k","race_half","race_marathon"]:
             data.setdefault(k, "")
 
-    # ── Up to 3 activities ──
     try:
         activities = client.get_activities_by_date(d, d)
         for i, act in enumerate(activities[:MAX_ACTIVITIES], start=1):
@@ -355,9 +322,44 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
     return data
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# EXCEL
-# ══════════════════════════════════════════════════════════════════════════════
+def download_fit_files(client, dates):
+    """Download FIT files for all activities in the date range. Returns dict of filename→bytes."""
+    fit_files = {}
+    print("\n📦 Downloading FIT files...")
+
+    for date in dates:
+        d = date.isoformat()
+        try:
+            activities = client.get_activities_by_date(d, d)
+            for act in activities[:MAX_ACTIVITIES]:
+                act_id   = act.get("activityId")
+                act_type = act.get("activityType", {}).get("typeKey", "activity")
+                act_name = act.get("activityName", "").replace(" ", "-").lower()
+                filename = f"{d}_{act_type}_{act_name}_{act_id}.fit"
+
+                try:
+                    fit_data = client.download_activity(
+                        act_id,
+                        dl_fmt=client.ActivityDownloadFormat.ORIGINAL
+                    )
+                    fit_files[filename] = fit_data
+                    print(f"  ✅ {filename}")
+                except Exception as e:
+                    print(f"  ⚠️  Could not download {filename}: {e}")
+        except Exception as e:
+            print(f"  ⚠️  Could not fetch activities for {d}: {e}")
+
+    return fit_files
+
+
+def create_zip(fit_files: dict) -> bytes:
+    """Zip all FIT files into a single bytes object."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for filename, data in fit_files.items():
+            zf.writestr(filename, data)
+    return buf.getvalue()
+
 
 def style_header(ws):
     for col_idx, (_, label) in enumerate(COLUMNS, start=1):
@@ -369,27 +371,26 @@ def style_header(ws):
         ws.column_dimensions[get_column_letter(col_idx)].width = max(len(label) + 4, 14)
 
 
-def get_existing_dates(ws) -> dict:
+def get_existing_dates(ws):
     return {ws.cell(row=r, column=1).value: r for r in range(2, ws.max_row + 1)}
 
 
-def append_row(ws, data: dict):
+def append_row(ws, data):
     row = [data.get(key, "") for key, _ in COLUMNS]
     ws.append(row)
     if ws.max_row % 2 == 0:
         for col_idx in range(1, len(COLUMNS) + 1):
-            tint = get_row_tint(col_idx)
-            ws.cell(row=ws.max_row, column=col_idx).fill = PatternFill("solid", fgColor=tint)
+            ws.cell(row=ws.max_row, column=col_idx).fill = PatternFill("solid", fgColor=get_row_tint(col_idx))
 
 
-def update_row(ws, row_num: int, data: dict):
+def update_row(ws, row_num, data):
     for col_idx, (key, _) in enumerate(COLUMNS, start=1):
         val = data.get(key, "")
         if val != "":
             ws.cell(row=row_num, column=col_idx).value = val
 
 
-def save_to_excel(all_data: list) -> int:
+def save_to_excel(all_data):
     if os.path.exists(EXCEL_FILE):
         wb = openpyxl.load_workbook(EXCEL_FILE)
         ws = wb.active
@@ -416,11 +417,7 @@ def save_to_excel(all_data: list) -> int:
     return added
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# EMAIL
-# ══════════════════════════════════════════════════════════════════════════════
-
-def send_email(added: int):
+def send_email(added, fit_files):
     sender       = os.environ.get("EMAIL_FROM")
     app_password = os.environ.get("EMAIL_APP_PASSWORD")
     recipient    = os.environ.get("EMAIL_TO")
@@ -439,14 +436,16 @@ def send_email(added: int):
 
 Your weekly Garmin data export is attached ({today}).
 
-{added} new row(s) added this week.
+  • health_data.xlsx  — {added} new row(s) added this week
+  • fit_files.zip     — {len(fit_files)} FIT file(s) for detailed activity analysis
 
-Up to 3 activities per day are included with full stats for each.
+Upload any FIT file to Claude for full HR, pace, split and GPS analysis.
 
 — Your Health Exporter
 """
     msg.attach(MIMEText(body, "plain"))
 
+    # Attach Excel
     with open(EXCEL_FILE, "rb") as f:
         part = MIMEBase("application", "octet-stream")
         part.set_payload(f.read())
@@ -454,16 +453,21 @@ Up to 3 activities per day are included with full stats for each.
         part.add_header("Content-Disposition", f'attachment; filename="health_data_{today}.xlsx"')
         msg.attach(part)
 
+    # Attach zipped FIT files
+    if fit_files:
+        zip_data = create_zip(fit_files)
+        part2 = MIMEBase("application", "zip")
+        part2.set_payload(zip_data)
+        encoders.encode_base64(part2)
+        part2.add_header("Content-Disposition", f'attachment; filename="fit_files_{today}.zip"')
+        msg.attach(part2)
+
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(sender, app_password)
         server.sendmail(sender, recipient, msg.as_string())
 
     print(f"📧 Email sent to {recipient}")
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# MAIN
-# ══════════════════════════════════════════════════════════════════════════════
 
 def main():
     print("=" * 50)
@@ -484,10 +488,13 @@ def main():
 
     print(f"\n💾 Saving to {EXCEL_FILE}...")
     added = save_to_excel(all_data)
-    print(f"✅ {added} new row(s) added → {os.path.abspath(EXCEL_FILE)}")
+    print(f"✅ {added} new row(s) added")
+
+    fit_files = download_fit_files(client, dates)
+    print(f"✅ {len(fit_files)} FIT file(s) downloaded")
 
     print("\n📧 Sending email...")
-    send_email(added)
+    send_email(added, fit_files)
 
 
 if __name__ == "__main__":
