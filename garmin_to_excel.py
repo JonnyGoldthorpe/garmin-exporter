@@ -42,7 +42,7 @@ except ImportError:
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 EXCEL_FILE      = "health_data.xlsx"
-DAYS_TO_FETCH   = 7
+DAYS_TO_FETCH   = 8
 MAX_ACTIVITIES  = 3
 GARTH_TOKEN_DIR = os.path.expanduser(os.environ.get("GARTH_HOME", "~/.garth"))
 # ─────────────────────────────────────────────────────────────────────────────
