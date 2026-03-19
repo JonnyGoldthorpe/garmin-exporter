@@ -1,7 +1,7 @@
 name: Weekly Health Export
 on:
   schedule:
-    - cron: '0 19 * * 7'
+    - cron: '0 19 * * 0'
   workflow_dispatch:
 jobs:
   export:
