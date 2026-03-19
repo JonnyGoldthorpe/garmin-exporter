@@ -44,6 +44,7 @@ except ImportError:
 EXCEL_FILE      = "health_data.xlsx"
 DAYS_TO_FETCH   = 7
 MAX_ACTIVITIES  = 3
+GARTH_TOKEN_DIR = os.path.expanduser(os.environ.get("GARTH_HOME", "~/.garth"))
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -172,9 +173,20 @@ def seconds_to_time(s):
 def garmin_login():
     email    = os.environ.get("GARMIN_EMAIL")    or input("Garmin email: ")
     password = os.environ.get("GARMIN_PASSWORD") or getpass("Garmin password: ")
+
     client = garminconnect.Garmin(email, password)
-    client.login()
-    print("✅ Logged in to Garmin")
+
+    # Try loading cached tokens first to avoid repeated SSO logins (which trigger 429s)
+    try:
+        client.login(tokenstore=GARTH_TOKEN_DIR)
+        print("✅ Logged in to Garmin (cached tokens)")
+    except Exception:
+        print("⚠️  No valid cached tokens — performing fresh login...")
+        client.login()
+        os.makedirs(GARTH_TOKEN_DIR, exist_ok=True)
+        client.garth.dump(GARTH_TOKEN_DIR)
+        print(f"✅ Logged in and tokens saved to {GARTH_TOKEN_DIR}")
+
     return client
 
 
