@@ -1,7 +1,7 @@
 name: Weekly Health Export
 on:
   schedule:
-    - cron: '0 17 * * 7'
+    - cron: '0 19 * * 7'
   workflow_dispatch:
 jobs:
   export:
@@ -22,8 +22,9 @@ jobs:
         env:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
           GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+          RENPHO_EMAIL: ${{ secrets.RENPHO_EMAIL }}
+          RENPHO_PASSWORD: ${{ secrets.RENPHO_PASSWORD }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: python garmin_to_excel.py
- 
