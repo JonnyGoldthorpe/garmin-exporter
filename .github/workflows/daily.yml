@@ -1,23 +1,23 @@
-name: Daily Health Export
-
+name: Weekly Health Export
 on:
   schedule:
     - cron: '0 17 * * 7'
   workflow_dispatch:
-
 jobs:
   export:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-
+      - name: Cache Garmin tokens
+        uses: actions/cache@v4
+        with:
+          path: ~/.garth
+          key: garmin-tokens
       - name: Install dependencies
         run: pip install -r requirements.txt
-
       - name: Run exporter
         env:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
@@ -26,3 +26,4 @@ jobs:
           EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: python garmin_to_excel.py
+ 
