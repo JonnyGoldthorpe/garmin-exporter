@@ -1,2 +1,4 @@
 garminconnect
 openpyxl
+PyNaCl
+requests
