@@ -12,15 +12,13 @@ jobs:
         with:
           python-version: '3.x'
       - name: Write Garmin tokens
+        env:
+          OAUTH1: ${{ secrets.GARMIN_OAUTH1_TOKEN }}
+          OAUTH2: ${{ secrets.GARMIN_OAUTH2_TOKEN }}
         run: |
           mkdir -p ~/.garth
-          echo '${{ secrets.GARMIN_OAUTH1_TOKEN }}' > ~/.garth/oauth1_token.json
-          echo '${{ secrets.GARMIN_OAUTH2_TOKEN }}' > ~/.garth/oauth2_token.json
-      - name: Cache Garmin tokens
-        uses: actions/cache@v4
-        with:
-          path: ~/.garth
-          key: garmin-tokens
+          echo "$OAUTH1" > ~/.garth/oauth1_token.json
+          echo "$OAUTH2" > ~/.garth/oauth2_token.json
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Run exporter
@@ -31,4 +29,5 @@ jobs:
           RENPHO_PASSWORD: ${{ secrets.RENPHO_PASSWORD }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
-          EMAIL_TO: ${{ secr
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: python garmin_to_excel.py
