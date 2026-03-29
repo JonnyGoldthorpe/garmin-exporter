@@ -44,7 +44,6 @@ except ImportError:
 EXCEL_FILE      = "health_data.xlsx"
 DAYS_TO_FETCH   = 8
 MAX_ACTIVITIES  = 3
-GARTH_TOKEN_DIR = os.path.expanduser(os.environ.get("GARTH_HOME", "~/.garth"))
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -175,18 +174,8 @@ def garmin_login():
     password = os.environ.get("GARMIN_PASSWORD") or getpass("Garmin password: ")
 
     client = garminconnect.Garmin(email, password)
-
-    # Try loading cached tokens first to avoid repeated SSO logins (which trigger 429s)
-    try:
-        client.login(tokenstore=GARTH_TOKEN_DIR)
-        print("✅ Logged in to Garmin (cached tokens)")
-    except Exception:
-        print("⚠️  No valid cached tokens — performing fresh login...")
-        client.login()
-        os.makedirs(GARTH_TOKEN_DIR, exist_ok=True)
-        client.garth.dump(GARTH_TOKEN_DIR)
-        print(f"✅ Logged in and tokens saved to {GARTH_TOKEN_DIR}")
-
+    client.login()
+    print("✅ Logged in to Garmin")
     return client
 
 
@@ -335,7 +324,6 @@ def fetch_garmin_day(client, date):
 
 
 def download_fit_files(client, dates):
-    """Download FIT files for all activities in the date range. Returns dict of filename→bytes."""
     fit_files = {}
     print("\n📦 Downloading FIT files...")
 
@@ -365,7 +353,6 @@ def download_fit_files(client, dates):
 
 
 def create_zip(fit_files: dict) -> bytes:
-    """Zip all FIT files into a single bytes object."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for filename, data in fit_files.items():
@@ -457,7 +444,6 @@ Upload any FIT file to Claude for full HR, pace, split and GPS analysis.
 """
     msg.attach(MIMEText(body, "plain"))
 
-    # Attach Excel
     with open(EXCEL_FILE, "rb") as f:
         part = MIMEBase("application", "octet-stream")
         part.set_payload(f.read())
@@ -465,7 +451,6 @@ Upload any FIT file to Claude for full HR, pace, split and GPS analysis.
         part.add_header("Content-Disposition", f'attachment; filename="health_data_{today}.xlsx"')
         msg.attach(part)
 
-    # Attach zipped FIT files
     if fit_files:
         zip_data = create_zip(fit_files)
         part2 = MIMEBase("application", "zip")
