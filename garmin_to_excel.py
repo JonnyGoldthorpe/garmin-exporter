@@ -173,13 +173,12 @@ def garmin_login():
     email    = os.environ.get("GARMIN_EMAIL")    or input("Garmin email: ")
     password = os.environ.get("GARMIN_PASSWORD") or getpass("Garmin password: ")
 
+    client = garminconnect.Garmin(email, password)
     tokenstore = os.path.expanduser("~/.garth")
     if os.path.isdir(tokenstore):
-        client = garminconnect.Garmin()
         client.login(tokenstore=tokenstore)
         print("✅ Logged in to Garmin (OAuth tokens)")
     else:
-        client = garminconnect.Garmin(email, password)
         client.login()
         print("✅ Logged in to Garmin (password)")
     return client
