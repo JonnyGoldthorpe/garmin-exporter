@@ -115,21 +115,25 @@ def garmin_login():
     client = garminconnect.Garmin(email, password)
 
     if oauth1 and oauth2:
+        print(f"ℹ️  OAuth1 token found (length: {len(oauth1)})")
+        print(f"ℹ️  OAuth2 token found (length: {len(oauth2)})")
         try:
             client.garth.oauth1_token = garth.auth.OAuth1Token.loads(oauth1)
+            print("✅ OAuth1 token loaded")
             client.garth.oauth2_token = garth.auth.OAuth2Token.loads(oauth2)
-            client.display_name  # validate token works
-            print("✅ Logged in to Garmin (OAuth tokens from secrets)")
+            print("✅ OAuth2 token loaded")
+            display = client.display_name
+            print(f"✅ Logged in to Garmin as {display} (OAuth tokens)")
             return client
         except Exception as e:
-            print(f"⚠️  Token login failed ({e}), falling back to password...")
-
-    client.login()
-    print("✅ Logged in to Garmin (email/password)")
-    print("ℹ️  Update your GitHub secrets with these new token values:")
-    print(f"   GARMIN_OAUTH1_TOKEN: {client.garth.oauth1_token.dumps()}")
-    print(f"   GARMIN_OAUTH2_TOKEN: {client.garth.oauth2_token.dumps()}")
-    return client
+            print(f"❌ Token login failed: {type(e).__name__}: {e}")
+            print("❌ Tokens are invalid/expired — cannot fall back to password (rate limited)")
+            raise SystemExit(1)
+    else:
+        print("❌ No OAuth tokens found in environment — cannot login without tokens (rate limited)")
+        print(f"   GARMIN_OAUTH1_TOKEN set: {bool(oauth1)}")
+        print(f"   GARMIN_OAUTH2_TOKEN set: {bool(oauth2)}")
+        raise SystemExit(1)
 
 
 def fetch_garmin_day(client, date: datetime.date) -> dict:
@@ -313,59 +317,4 @@ def send_email(added: int):
 
     body = f"""Hi,
 
-Your daily health data export is attached ({today}).
-
-{added} new row(s) added today.
-
-Blue columns = Garmin activity & wellness data
-Green columns = Weight & body composition (synced via WeightSyncr)
-
-— Your Health Exporter
-"""
-    msg.attach(MIMEText(body, "plain"))
-
-    with open(EXCEL_FILE, "rb") as f:
-        part = MIMEBase("application", "octet-stream")
-        part.set_payload(f.read())
-        encoders.encode_base64(part)
-        part.add_header("Content-Disposition", f'attachment; filename="health_data_{today}.xlsx"')
-        msg.attach(part)
-
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-        server.login(sender, app_password)
-        server.sendmail(sender, recipient, msg.as_string())
-
-    print(f"📧 Email sent to {recipient}")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# MAIN
-# ══════════════════════════════════════════════════════════════════════════════
-
-def main():
-    print("=" * 50)
-    print("   Health Data → Excel Exporter")
-    print("=" * 50)
-
-    print(f"\n📊 Fetching data (last {DAYS_TO_FETCH} days)...")
-    client = garmin_login()
-
-    today = datetime.date.today()
-    dates = [today - datetime.timedelta(days=i) for i in range(DAYS_TO_FETCH - 1, -1, -1)]
-
-    all_data = []
-    for date in dates:
-        print(f"  📅 {date.isoformat()}...", end=" ", flush=True)
-        all_data.append(fetch_garmin_day(client, date))
-        print("done")
-
-    print(f"\n💾 Saving to {EXCEL_FILE}...")
-    added = save_to_excel(all_data)
-    print(f"✅ {added} new row(s) added → {os.path.abspath(EXCEL_FILE)}")
-
-    print("\n📧 Sending email...")
-    send_email(added)
-
-
-if __name__ == "__main__":
-    main()
+Your daily health data export is atta
