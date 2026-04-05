@@ -1,8 +1,7 @@
 """
 Health Data -> Excel Daily Exporter
 ------------------------------------
-Single sheet: Garmin stats + weight/body composition from Garmin Connect
-(Weight synced into Garmin via WeightSyncr from Renpho)
+Pulls comprehensive data from Garmin Connect and emails health_data.xlsx
 
 Requirements:
     pip install garminconnect garth openpyxl
@@ -51,46 +50,74 @@ DAYS_TO_FETCH = 7
 
 
 COLUMNS = [
-    ("date",               "Date"),
-    ("steps",              "Steps"),
-    ("distance_km",        "Distance (km)"),
-    ("active_calories",    "Active Calories"),
-    ("total_calories",     "Total Calories"),
-    ("floors_climbed",     "Floors Climbed"),
-    ("active_minutes",     "Active Minutes"),
-    ("resting_heart_rate", "Resting HR"),
-    ("min_heart_rate",     "Min HR"),
-    ("max_heart_rate",     "Max HR"),
-    ("avg_stress",         "Avg Stress"),
-    ("body_battery_high",  "Body Battery High"),
-    ("body_battery_low",   "Body Battery Low"),
-    ("sleep_hours",        "Sleep (hrs)"),
-    ("sleep_score",        "Sleep Score"),
-    ("deep_sleep_min",     "Deep Sleep (min)"),
-    ("light_sleep_min",    "Light Sleep (min)"),
-    ("rem_sleep_min",      "REM Sleep (min)"),
-    ("awake_min",          "Awake (min)"),
-    ("activity_type",      "Activity Type"),
-    ("activity_name",      "Activity Name"),
-    ("activity_duration",  "Activity Duration (min)"),
-    ("activity_distance",  "Activity Distance (km)"),
-    ("activity_avg_hr",    "Activity Avg HR"),
-    ("activity_max_hr",    "Activity Max HR"),
-    ("activity_calories",  "Activity Calories"),
-    ("weight_kg",          "Weight (kg)"),
-    ("bmi",                "BMI"),
-    ("body_fat_pct",       "Body Fat %"),
-    ("muscle_mass_kg",     "Muscle Mass (kg)"),
-    ("bone_mass_kg",       "Bone Mass (kg)"),
-    ("body_water_pct",     "Body Water %"),
+    ("date",                    "Date"),
+    ("steps",                   "Steps"),
+    ("distance_km",             "Distance (km)"),
+    ("active_calories",         "Active Calories"),
+    ("total_calories",          "Total Calories"),
+    ("floors_climbed",          "Floors Climbed"),
+    ("active_minutes",          "Active Minutes"),
+    ("resting_heart_rate",      "Resting HR"),
+    ("min_heart_rate",          "Min HR"),
+    ("max_heart_rate",          "Max HR"),
+    ("hrv",                     "HRV"),
+    ("avg_stress",              "Avg Stress"),
+    ("body_battery_high",       "Body Battery High"),
+    ("body_battery_low",        "Body Battery Low"),
+    ("spo2",                    "SpO2 (%)"),
+    ("respiration_avg",         "Avg Respiration"),
+    ("hydration_goal_ml",       "Hydration Goal (ml)"),
+    ("hydration_intake_ml",     "Hydration Intake (ml)"),
+    ("sleep_hours",             "Sleep (hrs)"),
+    ("sleep_score",             "Sleep Score"),
+    ("deep_sleep_min",          "Deep Sleep (min)"),
+    ("light_sleep_min",         "Light Sleep (min)"),
+    ("rem_sleep_min",           "REM Sleep (min)"),
+    ("awake_min",               "Awake (min)"),
+    ("vo2_max",                 "VO2 Max"),
+    ("race_5k",                 "Race Pred 5K"),
+    ("race_10k",                "Race Pred 10K"),
+    ("race_half",               "Race Pred Half Marathon"),
+    ("race_marathon",           "Race Pred Marathon"),
+    ("activity_type",           "Activity Type"),
+    ("activity_name",           "Activity Name"),
+    ("activity_start_time",     "Activity Start Time"),
+    ("activity_duration",       "Activity Duration (min)"),
+    ("activity_distance",       "Activity Distance (km)"),
+    ("activity_avg_hr",         "Activity Avg HR"),
+    ("activity_max_hr",         "Activity Max HR"),
+    ("activity_calories",       "Activity Calories"),
+    ("training_load",           "Training Load"),
+    ("avg_pace",                "Avg Pace (min/km)"),
+    ("best_pace",               "Best Pace (min/km)"),
+    ("avg_cadence",             "Avg Cadence (spm)"),
+    ("max_cadence",             "Max Cadence (spm)"),
+    ("avg_power",               "Avg Power (W)"),
+    ("max_power",               "Max Power (W)"),
+    ("stamina_start",           "Stamina Start (%)"),
+    ("stamina_end",             "Stamina End (%)"),
+    ("stamina_min",             "Stamina Min (%)"),
+    ("aerobic_effect",          "Aerobic Effect"),
+    ("anaerobic_effect",        "Anaerobic Effect"),
+    ("exercise_load",           "Exercise Load"),
+    ("primary_benefit",         "Primary Benefit"),
+    ("avg_vert_osc",            "Avg Vertical Oscillation (cm)"),
+    ("avg_vert_ratio",          "Avg Vertical Ratio (%)"),
+    ("avg_ground_contact",      "Avg Ground Contact (ms)"),
+    ("avg_ground_balance",      "Avg Ground Balance (%)"),
+    ("avg_stride_length",       "Avg Stride Length (m)"),
+    ("elevation_gain",          "Elevation Gain (m)"),
+    ("elevation_loss",          "Elevation Loss (m)"),
+    ("min_elevation",           "Min Elevation (m)"),
+    ("max_elevation",           "Max Elevation (m)"),
 ]
 
-BODY_START_KEY = "weight_kg"
-BODY_START_COL = next(i + 1 for i, (k, _) in enumerate(COLUMNS) if k == BODY_START_KEY)
+ACTIVITY_START = "activity_type"
+ACTIVITY_START_COL = next(i + 1 for i, (k, _) in enumerate(COLUMNS) if k == ACTIVITY_START)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# GARMIN
+# GARMIN LOGIN
 # ══════════════════════════════════════════════════════════════════════════════
 
 def garmin_login():
@@ -101,20 +128,51 @@ def garmin_login():
     client = garminconnect.Garmin(email, password)
 
     if os.path.isdir(tokenstore) and os.listdir(tokenstore):
-        print(f"ℹ️  Token files found in {tokenstore}: {os.listdir(tokenstore)}")
+        print("ℹ️  Token files found: " + str(os.listdir(tokenstore)))
         try:
             client.garth.load(tokenstore)
             print("✅ Tokens loaded from ~/.garth")
             display = client.display_name
-            print(f"✅ Logged in to Garmin as {display}")
+            print("✅ Logged in as " + str(display))
             return client
         except Exception as e:
-            print(f"❌ Token login failed: {type(e).__name__}: {e}")
+            print("❌ Token login failed: " + str(e))
             raise SystemExit(1)
     else:
-        print(f"❌ No token files found in {tokenstore}")
+        print("❌ No token files found in " + tokenstore)
         raise SystemExit(1)
 
+
+# ══════════════════════════════════════════════════════════════════════════════
+# HELPERS
+# ══════════════════════════════════════════════════════════════════════════════
+
+def seconds_to_pace(spk):
+    if not spk:
+        return ""
+    try:
+        t = int(spk)
+        return str(t // 60) + ":" + str(t % 60).zfill(2)
+    except Exception:
+        return ""
+
+def seconds_to_time(s):
+    if not s:
+        return ""
+    try:
+        h = int(s) // 3600
+        m = (int(s) % 3600) // 60
+        sc = int(s) % 60
+        if h:
+            return str(h) + ":" + str(m).zfill(2) + ":" + str(sc).zfill(2)
+        return str(m) + ":" + str(sc).zfill(2)
+    except Exception:
+        return ""
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DATA FETCHING
+# ══════════════════════════════════════════════════════════════════════════════
 
 def fetch_garmin_day(client, date: datetime.date) -> dict:
     d = date.isoformat()
@@ -123,7 +181,8 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
     try:
         steps_data = client.get_steps_data(d)
         data["steps"] = sum(s.get("steps", 0) for s in steps_data) if steps_data else 0
-    except Exception:
+    except Exception as e:
+        print("    ⚠️  steps: " + str(e))
         data["steps"] = ""
 
     try:
@@ -137,18 +196,44 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
         data["avg_stress"]         = daily.get("averageStressLevel", "")
         data["body_battery_high"]  = daily.get("bodyBatteryHighestValue", "")
         data["body_battery_low"]   = daily.get("bodyBatteryLowestValue", "")
-    except Exception:
+        data["hydration_goal_ml"]  = daily.get("dailyHydrationGoal", "")
+        data["hydration_intake_ml"]= daily.get("totalHydrationIntakeInOz", "")
+    except Exception as e:
+        print("    ⚠️  stats: " + str(e))
         for k in ["distance_km","active_calories","total_calories","floors_climbed",
-                  "active_minutes","resting_heart_rate","avg_stress","body_battery_high","body_battery_low"]:
+                  "active_minutes","resting_heart_rate","avg_stress","body_battery_high",
+                  "body_battery_low","hydration_goal_ml","hydration_intake_ml"]:
             data.setdefault(k, "")
 
     try:
         hr = client.get_heart_rates(d)
         data["max_heart_rate"] = hr.get("maxHeartRate", "")
         data["min_heart_rate"] = hr.get("minHeartRate", "")
-    except Exception:
+    except Exception as e:
+        print("    ⚠️  heart rate: " + str(e))
         data["max_heart_rate"] = ""
         data["min_heart_rate"] = ""
+
+    try:
+        hrv = client.get_hrv_data(d)
+        data["hrv"] = hrv.get("hrvSummary", {}).get("weeklyAvg", "") if hrv else ""
+    except Exception as e:
+        print("    ⚠️  HRV: " + str(e))
+        data["hrv"] = ""
+
+    try:
+        spo2 = client.get_spo2_data(d)
+        data["spo2"] = spo2.get("averageSpO2", "") if spo2 else ""
+    except Exception as e:
+        print("    ⚠️  SpO2: " + str(e))
+        data["spo2"] = ""
+
+    try:
+        resp = client.get_respiration_data(d)
+        data["respiration_avg"] = resp.get("avgWakingRespirationValue", "") if resp else ""
+    except Exception as e:
+        print("    ⚠️  respiration: " + str(e))
+        data["respiration_avg"] = ""
 
     try:
         sleep   = client.get_sleep_data(d)
@@ -161,52 +246,87 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
         data["light_sleep_min"] = round((summary.get("lightSleepSeconds", 0) or 0) / 60)
         data["rem_sleep_min"]   = round((summary.get("remSleepSeconds",   0) or 0) / 60)
         data["awake_min"]       = round((summary.get("awakeSleepSeconds", 0) or 0) / 60)
-    except Exception:
+    except Exception as e:
+        print("    ⚠️  sleep: " + str(e))
         for k in ["sleep_hours","sleep_score","deep_sleep_min","light_sleep_min","rem_sleep_min","awake_min"]:
+            data.setdefault(k, "")
+
+    try:
+        vo2 = client.get_max_metrics(d)
+        if vo2 and len(vo2) > 0:
+            v = vo2[0]
+            data["vo2_max"]       = v.get("generic", {}).get("vo2MaxPreciseValue", "")
+            run_race = v.get("running", {})
+            data["race_5k"]       = seconds_to_time(run_race.get("vo2MaxRacePredictions", {}).get("5K"))
+            data["race_10k"]      = seconds_to_time(run_race.get("vo2MaxRacePredictions", {}).get("10K"))
+            data["race_half"]     = seconds_to_time(run_race.get("vo2MaxRacePredictions", {}).get("halfMarathon"))
+            data["race_marathon"] = seconds_to_time(run_race.get("vo2MaxRacePredictions", {}).get("marathon"))
+    except Exception as e:
+        print("    ⚠️  VO2 max: " + str(e))
+        for k in ["vo2_max","race_5k","race_10k","race_half","race_marathon"]:
             data.setdefault(k, "")
 
     try:
         activities = client.get_activities_by_date(d, d)
         if activities:
-            act = activities[0]
+            act    = activities[0]
+            act_id = act.get("activityId")
+
             data["activity_type"]     = act.get("activityType", {}).get("typeKey", "")
             data["activity_name"]     = act.get("activityName", "")
+            data["activity_start_time"] = act.get("startTimeLocal", "")[11:16]
             data["activity_duration"] = round((act.get("duration", 0) or 0) / 60, 1)
             data["activity_distance"] = round((act.get("distance", 0) or 0) / 1000, 2)
             data["activity_avg_hr"]   = act.get("averageHR", "")
             data["activity_max_hr"]   = act.get("maxHR", "")
             data["activity_calories"] = act.get("calories", "")
-        else:
-            for k in ["activity_type","activity_name","activity_duration",
-                      "activity_distance","activity_avg_hr","activity_max_hr","activity_calories"]:
-                data[k] = ""
-    except Exception:
-        for k in ["activity_type","activity_name","activity_duration",
-                  "activity_distance","activity_avg_hr","activity_max_hr","activity_calories"]:
-            data.setdefault(k, "")
+            data["training_load"]     = act.get("activityTrainingLoad", "")
+            data["avg_cadence"]       = act.get("averageRunningCadenceInStepsPerMinute", "") or \
+                                        act.get("averageBikingCadenceInRevPerMinute", "")
+            data["max_cadence"]       = act.get("maxRunningCadenceInStepsPerMinute", "") or \
+                                        act.get("maxBikingCadenceInRevPerMinute", "")
+            data["avg_power"]         = act.get("avgPower", "")
+            data["max_power"]         = act.get("maxPower", "")
+            data["elevation_gain"]    = act.get("elevationGain", "")
+            data["elevation_loss"]    = act.get("elevationLoss", "")
+            data["min_elevation"]     = act.get("minElevation", "")
+            data["max_elevation"]     = act.get("maxElevation", "")
 
-    try:
-        body        = client.get_body_composition(d, d)
-        weight_list = body.get("dateWeightList", []) if body else []
-        entries     = body.get("totalAverage", {}) if body else {}
-        if weight_list:
-            entry = weight_list[-1]
-            data["weight_kg"]      = round(entry.get("weight", 0) / 1000, 2) if entry.get("weight") else ""
-            data["bmi"]            = entry.get("bmi", "")
-            data["body_fat_pct"]   = entry.get("bodyFat", "")
-            data["muscle_mass_kg"] = round(entry.get("muscleMass", 0) / 1000, 2) if entry.get("muscleMass") else ""
-            data["bone_mass_kg"]   = round(entry.get("boneMass", 0) / 1000, 2) if entry.get("boneMass") else ""
-            data["body_water_pct"] = entry.get("bodyWater", "")
+            avg_speed = act.get("averageSpeed", 0)
+            max_speed = act.get("maxSpeed", 0)
+            data["avg_pace"]  = seconds_to_pace(1000 / avg_speed) if avg_speed else ""
+            data["best_pace"] = seconds_to_pace(1000 / max_speed) if max_speed else ""
+
+            try:
+                details = client.get_activity(act_id)
+                summary = details.get("summaryDTO", {})
+                data["aerobic_effect"]    = summary.get("aerobicTrainingEffect", "")
+                data["anaerobic_effect"]  = summary.get("anaerobicTrainingEffect", "")
+                data["exercise_load"]     = summary.get("activityTrainingLoad", "")
+                data["primary_benefit"]   = summary.get("aerobicTrainingEffectMessage", "")
+                data["stamina_start"]     = summary.get("startStamina", "")
+                data["stamina_end"]       = summary.get("endStamina", "")
+                data["stamina_min"]       = summary.get("minStamina", "")
+                data["avg_vert_osc"]      = summary.get("avgVerticalOscillation", "")
+                data["avg_vert_ratio"]    = summary.get("avgVerticalRatio", "")
+                data["avg_ground_contact"]= summary.get("avgGroundContactTime", "")
+                data["avg_ground_balance"]= summary.get("avgGroundContactBalance", "")
+                data["avg_stride_length"] = round(summary.get("avgStrideLength", 0) / 100, 2) \
+                                            if summary.get("avgStrideLength") else ""
+            except Exception as e:
+                print("    ⚠️  activity details: " + str(e))
         else:
-            data["weight_kg"]      = round(entries.get("weight", 0) / 1000, 2) if entries.get("weight") else ""
-            data["bmi"]            = entries.get("bmi", "")
-            data["body_fat_pct"]   = entries.get("bodyFat", "")
-            data["muscle_mass_kg"] = round(entries.get("muscleMass", 0) / 1000, 2) if entries.get("muscleMass") else ""
-            data["bone_mass_kg"]   = round(entries.get("boneMass", 0) / 1000, 2) if entries.get("boneMass") else ""
-            data["body_water_pct"] = entries.get("bodyWater", "")
-    except Exception:
-        for k in ["weight_kg","bmi","body_fat_pct","muscle_mass_kg","bone_mass_kg","body_water_pct"]:
-            data.setdefault(k, "")
+            for k in ["activity_type","activity_name","activity_start_time","activity_duration",
+                      "activity_distance","activity_avg_hr","activity_max_hr","activity_calories",
+                      "training_load","avg_pace","best_pace","avg_cadence","max_cadence",
+                      "avg_power","max_power","elevation_gain","elevation_loss","min_elevation",
+                      "max_elevation","aerobic_effect","anaerobic_effect","exercise_load",
+                      "primary_benefit","stamina_start","stamina_end","stamina_min",
+                      "avg_vert_osc","avg_vert_ratio","avg_ground_contact","avg_ground_balance",
+                      "avg_stride_length"]:
+                data[k] = ""
+    except Exception as e:
+        print("    ⚠️  activities: " + str(e))
 
     return data
 
@@ -217,16 +337,12 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
 
 def style_header(ws):
     for col_idx, (_, label) in enumerate(COLUMNS, start=1):
-        colour = "1F4E79" if col_idx < BODY_START_COL else "1E5631"
+        colour = "1F4E79" if col_idx < ACTIVITY_START_COL else "4A235A"
         cell = ws.cell(row=1, column=col_idx, value=label)
         cell.fill = PatternFill("solid", fgColor=colour)
         cell.font = Font(bold=True, color="FFFFFF", size=11)
         cell.alignment = Alignment(horizontal="center")
         ws.column_dimensions[get_column_letter(col_idx)].width = max(len(label) + 4, 14)
-
-
-def get_existing_dates(ws) -> set:
-    return {ws.cell(row=r, column=1).value for r in range(2, ws.max_row + 1)}
 
 
 def append_row(ws, data: dict):
@@ -235,7 +351,7 @@ def append_row(ws, data: dict):
     last_row = ws.max_row
     if last_row % 2 == 0:
         for col_idx in range(1, len(COLUMNS) + 1):
-            colour = "D6E4F0" if col_idx < BODY_START_COL else "D8F0DC"
+            colour = "D6E4F0" if col_idx < ACTIVITY_START_COL else "E8DAEF"
             ws.cell(row=last_row, column=col_idx).fill = PatternFill("solid", fgColor=colour)
 
 
@@ -297,10 +413,8 @@ def send_email(added: int):
 
     body = (
         "Hi,\n\n"
-        "Your daily health data export is attached (" + today + ").\n\n"
-        + str(added) + " new row(s) added today.\n\n"
-        "Blue columns = Garmin activity & wellness data\n"
-        "Green columns = Weight & body composition (synced via WeightSyncr)\n\n"
+        "Your weekly Garmin data export is attached (" + today + ").\n\n"
+        + str(added) + " new row(s) added.\n\n"
         "-- Your Health Exporter\n"
     )
     msg.attach(MIMEText(body, "plain"))
@@ -342,7 +456,7 @@ def main():
 
     print("\nSaving to " + EXCEL_FILE + "...")
     added = save_to_excel(all_data)
-    print("Added " + str(added) + " new row(s) -> " + os.path.abspath(EXCEL_FILE))
+    print("Added " + str(added) + " new row(s)")
 
     print("\nSending email...")
     send_email(added)
