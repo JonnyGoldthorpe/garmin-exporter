@@ -5,11 +5,13 @@ Single sheet: Garmin stats + weight/body composition from Garmin Connect
 (Weight synced into Garmin via WeightSyncr from Renpho)
 
 Requirements:
-    pip install garminconnect openpyxl
+    pip install garminconnect garth openpyxl
 
 Environment variables (set in GitHub Secrets):
     GARMIN_EMAIL        Garmin login email
     GARMIN_PASSWORD     Garmin login password
+    GARMIN_OAUTH1_TOKEN OAuth1 token string
+    GARMIN_OAUTH2_TOKEN OAuth2 token string
     EMAIL_FROM          Gmail address to send from
     EMAIL_APP_PASSWORD  Gmail App Password
     EMAIL_TO            Address to receive the file
@@ -27,14 +29,19 @@ from getpass import getpass
 try:
     import garminconnect
 except ImportError:
-    raise SystemExit("Please run: pip install garminconnect openpyxl")
+    raise SystemExit("Please run: pip install garminconnect garth openpyxl")
+
+try:
+    import garth
+except ImportError:
+    raise SystemExit("Please run: pip install garth")
 
 try:
     import openpyxl
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 except ImportError:
-    raise SystemExit("Please run: pip install garminconnect openpyxl")
+    raise SystemExit("Please run: pip install openpyxl")
 
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
@@ -102,9 +109,26 @@ BODY_START_COL = next(i + 1 for i, (k, _) in enumerate(COLUMNS) if k == BODY_STA
 def garmin_login():
     email    = os.environ.get("GARMIN_EMAIL")    or input("Garmin email: ")
     password = os.environ.get("GARMIN_PASSWORD") or getpass("Garmin password: ")
+    oauth1   = os.environ.get("GARMIN_OAUTH1_TOKEN")
+    oauth2   = os.environ.get("GARMIN_OAUTH2_TOKEN")
+
     client = garminconnect.Garmin(email, password)
+
+    if oauth1 and oauth2:
+        try:
+            client.garth.oauth1_token = garth.auth.OAuth1Token.loads(oauth1)
+            client.garth.oauth2_token = garth.auth.OAuth2Token.loads(oauth2)
+            client.display_name  # validate token works
+            print("✅ Logged in to Garmin (OAuth tokens from secrets)")
+            return client
+        except Exception as e:
+            print(f"⚠️  Token login failed ({e}), falling back to password...")
+
     client.login()
-    print("✅ Logged in to Garmin")
+    print("✅ Logged in to Garmin (email/password)")
+    print("ℹ️  Update your GitHub secrets with these new token values:")
+    print(f"   GARMIN_OAUTH1_TOKEN: {client.garth.oauth1_token.dumps()}")
+    print(f"   GARMIN_OAUTH2_TOKEN: {client.garth.oauth2_token.dumps()}")
     return client
 
 
@@ -177,17 +201,12 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
                   "activity_distance","activity_avg_hr","activity_max_hr","activity_calories"]:
             data.setdefault(k, "")
 
-    # Body composition (synced from Renpho via WeightSyncr)
     try:
-        start = d
-        end   = d
-        body  = client.get_body_composition(start, end)
-        entries = body.get("totalAverage", {}) if body else {}
-
-        # Also try dateWeightList for more granular data
+        body        = client.get_body_composition(d, d)
         weight_list = body.get("dateWeightList", []) if body else []
+        entries     = body.get("totalAverage", {}) if body else {}
         if weight_list:
-            entry = weight_list[-1]  # most recent entry for this day
+            entry = weight_list[-1]
             data["weight_kg"]      = round(entry.get("weight", 0) / 1000, 2) if entry.get("weight") else ""
             data["bmi"]            = entry.get("bmi", "")
             data["body_fat_pct"]   = entry.get("bodyFat", "")
@@ -237,7 +256,6 @@ def append_row(ws, data: dict):
 
 
 def update_row(ws, row_num: int, data: dict):
-    """Update all columns for an existing row."""
     for col_idx, (key, _) in enumerate(COLUMNS, start=1):
         val = data.get(key, "")
         if val != "":
