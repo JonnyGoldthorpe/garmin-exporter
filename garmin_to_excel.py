@@ -112,8 +112,7 @@ COLUMNS = [
     ("max_elevation",           "Max Elevation (m)"),
 ]
 
-ACTIVITY_START = "activity_type"
-ACTIVITY_START_COL = next(i + 1 for i, (k, _) in enumerate(COLUMNS) if k == ACTIVITY_START)
+ACTIVITY_START_COL = next(i + 1 for i, (k, _) in enumerate(COLUMNS) if k == "activity_type")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -132,8 +131,8 @@ def garmin_login():
         try:
             client.garth.load(tokenstore)
             print("✅ Tokens loaded from ~/.garth")
-            display = client.display_name
-            print("✅ Logged in as " + str(display))
+            client.username = client.get_full_name()
+            print("✅ Logged in as " + str(client.username))
             return client
         except Exception as e:
             print("❌ Token login failed: " + str(e))
@@ -187,17 +186,17 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
 
     try:
         daily = client.get_stats(d)
-        data["distance_km"]        = round(daily.get("totalDistanceMeters", 0) / 1000, 2)
-        data["active_calories"]    = daily.get("activeKilocalories", "")
-        data["total_calories"]     = daily.get("totalKilocalories", "")
-        data["floors_climbed"]     = daily.get("floorsAscended", "")
-        data["active_minutes"]     = daily.get("highlyActiveSeconds", 0) // 60
-        data["resting_heart_rate"] = daily.get("restingHeartRate", "")
-        data["avg_stress"]         = daily.get("averageStressLevel", "")
-        data["body_battery_high"]  = daily.get("bodyBatteryHighestValue", "")
-        data["body_battery_low"]   = daily.get("bodyBatteryLowestValue", "")
-        data["hydration_goal_ml"]  = daily.get("dailyHydrationGoal", "")
-        data["hydration_intake_ml"]= daily.get("totalHydrationIntakeInOz", "")
+        data["distance_km"]         = round(daily.get("totalDistanceMeters", 0) / 1000, 2)
+        data["active_calories"]     = daily.get("activeKilocalories", "")
+        data["total_calories"]      = daily.get("totalKilocalories", "")
+        data["floors_climbed"]      = daily.get("floorsAscended", "")
+        data["active_minutes"]      = daily.get("highlyActiveSeconds", 0) // 60
+        data["resting_heart_rate"]  = daily.get("restingHeartRate", "")
+        data["avg_stress"]          = daily.get("averageStressLevel", "")
+        data["body_battery_high"]   = daily.get("bodyBatteryHighestValue", "")
+        data["body_battery_low"]    = daily.get("bodyBatteryLowestValue", "")
+        data["hydration_goal_ml"]   = daily.get("dailyHydrationGoal", "")
+        data["hydration_intake_ml"] = daily.get("totalHydrationIntakeInOz", "")
     except Exception as e:
         print("    ⚠️  stats: " + str(e))
         for k in ["distance_km","active_calories","total_calories","floors_climbed",
@@ -272,25 +271,25 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
             act    = activities[0]
             act_id = act.get("activityId")
 
-            data["activity_type"]     = act.get("activityType", {}).get("typeKey", "")
-            data["activity_name"]     = act.get("activityName", "")
+            data["activity_type"]       = act.get("activityType", {}).get("typeKey", "")
+            data["activity_name"]       = act.get("activityName", "")
             data["activity_start_time"] = act.get("startTimeLocal", "")[11:16]
-            data["activity_duration"] = round((act.get("duration", 0) or 0) / 60, 1)
-            data["activity_distance"] = round((act.get("distance", 0) or 0) / 1000, 2)
-            data["activity_avg_hr"]   = act.get("averageHR", "")
-            data["activity_max_hr"]   = act.get("maxHR", "")
-            data["activity_calories"] = act.get("calories", "")
-            data["training_load"]     = act.get("activityTrainingLoad", "")
-            data["avg_cadence"]       = act.get("averageRunningCadenceInStepsPerMinute", "") or \
-                                        act.get("averageBikingCadenceInRevPerMinute", "")
-            data["max_cadence"]       = act.get("maxRunningCadenceInStepsPerMinute", "") or \
-                                        act.get("maxBikingCadenceInRevPerMinute", "")
-            data["avg_power"]         = act.get("avgPower", "")
-            data["max_power"]         = act.get("maxPower", "")
-            data["elevation_gain"]    = act.get("elevationGain", "")
-            data["elevation_loss"]    = act.get("elevationLoss", "")
-            data["min_elevation"]     = act.get("minElevation", "")
-            data["max_elevation"]     = act.get("maxElevation", "")
+            data["activity_duration"]   = round((act.get("duration", 0) or 0) / 60, 1)
+            data["activity_distance"]   = round((act.get("distance", 0) or 0) / 1000, 2)
+            data["activity_avg_hr"]     = act.get("averageHR", "")
+            data["activity_max_hr"]     = act.get("maxHR", "")
+            data["activity_calories"]   = act.get("calories", "")
+            data["training_load"]       = act.get("activityTrainingLoad", "")
+            data["avg_cadence"]         = act.get("averageRunningCadenceInStepsPerMinute", "") or \
+                                          act.get("averageBikingCadenceInRevPerMinute", "")
+            data["max_cadence"]         = act.get("maxRunningCadenceInStepsPerMinute", "") or \
+                                          act.get("maxBikingCadenceInRevPerMinute", "")
+            data["avg_power"]           = act.get("avgPower", "")
+            data["max_power"]           = act.get("maxPower", "")
+            data["elevation_gain"]      = act.get("elevationGain", "")
+            data["elevation_loss"]      = act.get("elevationLoss", "")
+            data["min_elevation"]       = act.get("minElevation", "")
+            data["max_elevation"]       = act.get("maxElevation", "")
 
             avg_speed = act.get("averageSpeed", 0)
             max_speed = act.get("maxSpeed", 0)
@@ -300,19 +299,19 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
             try:
                 details = client.get_activity(act_id)
                 summary = details.get("summaryDTO", {})
-                data["aerobic_effect"]    = summary.get("aerobicTrainingEffect", "")
-                data["anaerobic_effect"]  = summary.get("anaerobicTrainingEffect", "")
-                data["exercise_load"]     = summary.get("activityTrainingLoad", "")
-                data["primary_benefit"]   = summary.get("aerobicTrainingEffectMessage", "")
-                data["stamina_start"]     = summary.get("startStamina", "")
-                data["stamina_end"]       = summary.get("endStamina", "")
-                data["stamina_min"]       = summary.get("minStamina", "")
-                data["avg_vert_osc"]      = summary.get("avgVerticalOscillation", "")
-                data["avg_vert_ratio"]    = summary.get("avgVerticalRatio", "")
-                data["avg_ground_contact"]= summary.get("avgGroundContactTime", "")
-                data["avg_ground_balance"]= summary.get("avgGroundContactBalance", "")
-                data["avg_stride_length"] = round(summary.get("avgStrideLength", 0) / 100, 2) \
-                                            if summary.get("avgStrideLength") else ""
+                data["aerobic_effect"]     = summary.get("aerobicTrainingEffect", "")
+                data["anaerobic_effect"]   = summary.get("anaerobicTrainingEffect", "")
+                data["exercise_load"]      = summary.get("activityTrainingLoad", "")
+                data["primary_benefit"]    = summary.get("aerobicTrainingEffectMessage", "")
+                data["stamina_start"]      = summary.get("startStamina", "")
+                data["stamina_end"]        = summary.get("endStamina", "")
+                data["stamina_min"]        = summary.get("minStamina", "")
+                data["avg_vert_osc"]       = summary.get("avgVerticalOscillation", "")
+                data["avg_vert_ratio"]     = summary.get("avgVerticalRatio", "")
+                data["avg_ground_contact"] = summary.get("avgGroundContactTime", "")
+                data["avg_ground_balance"] = summary.get("avgGroundContactBalance", "")
+                data["avg_stride_length"]  = round(summary.get("avgStrideLength", 0) / 100, 2) \
+                                             if summary.get("avgStrideLength") else ""
             except Exception as e:
                 print("    ⚠️  activity details: " + str(e))
         else:
