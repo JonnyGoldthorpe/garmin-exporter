@@ -131,8 +131,10 @@ def garmin_login():
         try:
             client.garth.load(tokenstore)
             print("✅ Tokens loaded from ~/.garth")
-            client.username = client.get_full_name()
-            print("✅ Logged in as " + str(client.username))
+            profile = client.garth.connectapi("/userprofile-service/socialProfile")
+            client.display_name = profile.get("displayName")
+            client.username = profile.get("displayName")
+            print("✅ Logged in as " + str(client.display_name))
             return client
         except Exception as e:
             print("❌ Token login failed: " + str(e))
