@@ -1,5 +1,5 @@
 """
-Health Data → Excel Daily Exporter
+Health Data -> Excel Daily Exporter
 ------------------------------------
 Single sheet: Garmin stats + weight/body composition from Garmin Connect
 (Weight synced into Garmin via WeightSyncr from Renpho)
@@ -94,32 +94,25 @@ BODY_START_COL = next(i + 1 for i, (k, _) in enumerate(COLUMNS) if k == BODY_STA
 # ══════════════════════════════════════════════════════════════════════════════
 
 def garmin_login():
-    email    = os.environ.get("GARMIN_EMAIL")    or input("Garmin email: ")
-    password = os.environ.get("GARMIN_PASSWORD") or getpass("Garmin password: ")
-    oauth1   = os.environ.get("GARMIN_OAUTH1_TOKEN")
-    oauth2   = os.environ.get("GARMIN_OAUTH2_TOKEN")
+    email      = os.environ.get("GARMIN_EMAIL")    or input("Garmin email: ")
+    password   = os.environ.get("GARMIN_PASSWORD") or getpass("Garmin password: ")
+    tokenstore = os.path.expanduser("~/.garth")
 
     client = garminconnect.Garmin(email, password)
 
-    if oauth1 and oauth2:
-        print(f"ℹ️  OAuth1 token found (length: {len(oauth1)})")
-        print(f"ℹ️  OAuth2 token found (length: {len(oauth2)})")
+    if os.path.isdir(tokenstore) and os.listdir(tokenstore):
+        print(f"ℹ️  Token files found in {tokenstore}: {os.listdir(tokenstore)}")
         try:
-            client.garth.oauth1_token = garth.auth.OAuth1Token.loads(oauth1)
-            print("✅ OAuth1 token loaded")
-            client.garth.oauth2_token = garth.auth.OAuth2Token.loads(oauth2)
-            print("✅ OAuth2 token loaded")
+            client.garth.load(tokenstore)
+            print("✅ Tokens loaded from ~/.garth")
             display = client.display_name
-            print(f"✅ Logged in to Garmin as {display} (OAuth tokens)")
+            print(f"✅ Logged in to Garmin as {display}")
             return client
         except Exception as e:
             print(f"❌ Token login failed: {type(e).__name__}: {e}")
-            print("❌ Tokens are invalid/expired — cannot fall back to password (rate limited)")
             raise SystemExit(1)
     else:
-        print("❌ No OAuth tokens found in environment")
-        print(f"   GARMIN_OAUTH1_TOKEN set: {bool(oauth1)}")
-        print(f"   GARMIN_OAUTH2_TOKEN set: {bool(oauth2)}")
+        print(f"❌ No token files found in {tokenstore}")
         raise SystemExit(1)
 
 
@@ -293,7 +286,7 @@ def send_email(added: int):
     recipient    = os.environ.get("EMAIL_TO")
 
     if not all([sender, app_password, recipient]):
-        print("⚠️  Email credentials not set — skipping email.")
+        print("Warning: Email credentials not set - skipping email.")
         return
 
     today = datetime.date.today().strftime("%d %b %Y")
@@ -316,14 +309,14 @@ def send_email(added: int):
         part = MIMEBase("application", "octet-stream")
         part.set_payload(f.read())
         encoders.encode_base64(part)
-        part.add_header("Content-Disposition", f'attachment; filename="health_data_{today}.xlsx"')
+        part.add_header("Content-Disposition", "attachment; filename=\"health_data_" + today + ".xlsx\"")
         msg.attach(part)
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(sender, app_password)
         server.sendmail(sender, recipient, msg.as_string())
 
-    print(f"📧 Email sent to {recipient}")
+    print("Email sent to " + recipient)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -335,7 +328,7 @@ def main():
     print("   Health Data -> Excel Exporter")
     print("=" * 50)
 
-    print(f"\n📊 Fetching data (last {DAYS_TO_FETCH} days)...")
+    print("\nFetching data (last " + str(DAYS_TO_FETCH) + " days)...")
     client = garmin_login()
 
     today = datetime.date.today()
@@ -343,15 +336,15 @@ def main():
 
     all_data = []
     for date in dates:
-        print(f"  📅 {date.isoformat()}...", end=" ", flush=True)
+        print("  " + date.isoformat() + "...", end=" ", flush=True)
         all_data.append(fetch_garmin_day(client, date))
         print("done")
 
-    print(f"\n💾 Saving to {EXCEL_FILE}...")
+    print("\nSaving to " + EXCEL_FILE + "...")
     added = save_to_excel(all_data)
-    print(f"✅ {added} new row(s) added -> {os.path.abspath(EXCEL_FILE)}")
+    print("Added " + str(added) + " new row(s) -> " + os.path.abspath(EXCEL_FILE))
 
-    print("\n📧 Sending email...")
+    print("\nSending email...")
     send_email(added)
 
 
