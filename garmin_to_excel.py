@@ -51,36 +51,25 @@ DAYS_TO_FETCH = 7
 
 
 COLUMNS = [
-    # Date
     ("date",               "Date"),
-
-    # Garmin: Activity
     ("steps",              "Steps"),
     ("distance_km",        "Distance (km)"),
     ("active_calories",    "Active Calories"),
     ("total_calories",     "Total Calories"),
     ("floors_climbed",     "Floors Climbed"),
     ("active_minutes",     "Active Minutes"),
-
-    # Garmin: Heart Rate
     ("resting_heart_rate", "Resting HR"),
     ("min_heart_rate",     "Min HR"),
     ("max_heart_rate",     "Max HR"),
-
-    # Garmin: Wellness
     ("avg_stress",         "Avg Stress"),
     ("body_battery_high",  "Body Battery High"),
     ("body_battery_low",   "Body Battery Low"),
-
-    # Garmin: Sleep
     ("sleep_hours",        "Sleep (hrs)"),
     ("sleep_score",        "Sleep Score"),
     ("deep_sleep_min",     "Deep Sleep (min)"),
     ("light_sleep_min",    "Light Sleep (min)"),
     ("rem_sleep_min",      "REM Sleep (min)"),
     ("awake_min",          "Awake (min)"),
-
-    # Garmin: Activity detail
     ("activity_type",      "Activity Type"),
     ("activity_name",      "Activity Name"),
     ("activity_duration",  "Activity Duration (min)"),
@@ -88,8 +77,6 @@ COLUMNS = [
     ("activity_avg_hr",    "Activity Avg HR"),
     ("activity_max_hr",    "Activity Max HR"),
     ("activity_calories",  "Activity Calories"),
-
-    # Body composition (from Garmin, synced via WeightSyncr)
     ("weight_kg",          "Weight (kg)"),
     ("bmi",                "BMI"),
     ("body_fat_pct",       "Body Fat %"),
@@ -130,7 +117,7 @@ def garmin_login():
             print("❌ Tokens are invalid/expired — cannot fall back to password (rate limited)")
             raise SystemExit(1)
     else:
-        print("❌ No OAuth tokens found in environment — cannot login without tokens (rate limited)")
+        print("❌ No OAuth tokens found in environment")
         print(f"   GARMIN_OAUTH1_TOKEN set: {bool(oauth1)}")
         print(f"   GARMIN_OAUTH2_TOKEN set: {bool(oauth2)}")
         raise SystemExit(1)
@@ -313,8 +300,60 @@ def send_email(added: int):
     msg = MIMEMultipart()
     msg["From"]    = sender
     msg["To"]      = recipient
-    msg["Subject"] = f"💪 Health Data — {today}"
+    msg["Subject"] = "Health Data - " + today
 
-    body = f"""Hi,
+    body = (
+        "Hi,\n\n"
+        "Your daily health data export is attached (" + today + ").\n\n"
+        + str(added) + " new row(s) added today.\n\n"
+        "Blue columns = Garmin activity & wellness data\n"
+        "Green columns = Weight & body composition (synced via WeightSyncr)\n\n"
+        "-- Your Health Exporter\n"
+    )
+    msg.attach(MIMEText(body, "plain"))
 
-Your daily health data export is atta
+    with open(EXCEL_FILE, "rb") as f:
+        part = MIMEBase("application", "octet-stream")
+        part.set_payload(f.read())
+        encoders.encode_base64(part)
+        part.add_header("Content-Disposition", f'attachment; filename="health_data_{today}.xlsx"')
+        msg.attach(part)
+
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(sender, app_password)
+        server.sendmail(sender, recipient, msg.as_string())
+
+    print(f"📧 Email sent to {recipient}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MAIN
+# ══════════════════════════════════════════════════════════════════════════════
+
+def main():
+    print("=" * 50)
+    print("   Health Data -> Excel Exporter")
+    print("=" * 50)
+
+    print(f"\n📊 Fetching data (last {DAYS_TO_FETCH} days)...")
+    client = garmin_login()
+
+    today = datetime.date.today()
+    dates = [today - datetime.timedelta(days=i) for i in range(DAYS_TO_FETCH - 1, -1, -1)]
+
+    all_data = []
+    for date in dates:
+        print(f"  📅 {date.isoformat()}...", end=" ", flush=True)
+        all_data.append(fetch_garmin_day(client, date))
+        print("done")
+
+    print(f"\n💾 Saving to {EXCEL_FILE}...")
+    added = save_to_excel(all_data)
+    print(f"✅ {added} new row(s) added -> {os.path.abspath(EXCEL_FILE)}")
+
+    print("\n📧 Sending email...")
+    send_email(added)
+
+
+if __name__ == "__main__":
+    main()
