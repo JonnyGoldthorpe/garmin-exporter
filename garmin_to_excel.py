@@ -130,11 +130,9 @@ def garmin_login():
         print("ℹ️  Token files found: " + str(os.listdir(tokenstore)))
         try:
             client.garth.load(tokenstore)
-            print("✅ Tokens loaded from ~/.garth")
-            profile = client.garth.connectapi("/userprofile-service/socialProfile")
-            client.display_name = profile.get("displayName")
-            client.username = profile.get("displayName")
-            print("✅ Logged in as " + str(client.display_name))
+            client.display_name = "ba0cc129-91a0-4b4e-a3ea-045993674440"
+            client.username = "ba0cc129-91a0-4b4e-a3ea-045993674440"
+            print("✅ Logged in (display name set)")
             return client
         except Exception as e:
             print("❌ Token login failed: " + str(e))
@@ -142,6 +140,7 @@ def garmin_login():
     else:
         print("❌ No token files found in " + tokenstore)
         raise SystemExit(1)
+
 
 
 # ══════════════════════════════════════════════════════════════════════════════
