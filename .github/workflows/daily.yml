@@ -6,6 +6,8 @@ on:
 jobs:
   export:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -19,6 +21,27 @@ jobs:
           mkdir -p ~/.garth
           echo "$OAUTH1" > ~/.garth/oauth1_token.json
           echo "$OAUTH2" > ~/.garth/oauth2_token.json
+          pip install garth -q
+          python - <<'EOF'
+          import garth
+          import garth.auth_tokens as at
+          import json
+
+          with open("/home/runner/.garth/oauth1_token.json") as f:
+              o1 = json.load(f)
+          with open("/home/runner/.garth/oauth2_token.json") as f:
+              o2 = json.load(f)
+
+          c = garth.Client()
+          c.oauth1_token = at.OAuth1Token(**o1)
+          c.oauth2_token = at.OAuth2Token(**o2)
+          c.refresh_oauth2()
+
+          with open("/home/runner/.garth/oauth2_token.json", "w") as f:
+              json.dump(dict(c.oauth2_token.__dict__), f, default=str)
+
+          print("Token refreshed successfully")
+          EOF
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Run exporter
