@@ -1,21 +1,27 @@
-name: Weekly Health Export
+name: Daily Health Export
 on:
   schedule:
-    - cron: '0 19 * * 0'
+    - cron: '0 7 * * *'
   workflow_dispatch:
 jobs:
   export:
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+      - name: Write Garmin tokens
+        env:
+          OAUTH1: ${{ secrets.GARMIN_OAUTH1_TOKEN }}
+          OAUTH2: ${{ secrets.GARMIN_OAUTH2_TOKEN }}
+        run: |
+          mkdir -p ~/.garth
+          echo "$OAUTH1" > ~/.garth/oauth1_token.json
+          echo "$OAUTH2" > ~/.garth/oauth2_token.json
       - name: Install dependencies
         run: pip install -r requirements.txt
-        - name: Run exporter
+      - name: Run exporter
         env:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
           GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
