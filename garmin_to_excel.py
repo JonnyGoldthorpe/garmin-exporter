@@ -120,28 +120,13 @@ ACTIVITY_START_COL = next(i + 1 for i, (k, _) in enumerate(COLUMNS) if k == "act
 # ══════════════════════════════════════════════════════════════════════════════
 
 def garmin_login():
-    email      = os.environ.get("GARMIN_EMAIL")    or input("Garmin email: ")
-    password   = os.environ.get("GARMIN_PASSWORD") or getpass("Garmin password: ")
-    tokenstore = os.path.expanduser("~/.garth")
+    email    = os.environ.get("GARMIN_EMAIL")    or input("Garmin email: ")
+    password = os.environ.get("GARMIN_PASSWORD") or getpass("Garmin password: ")
 
     client = garminconnect.Garmin(email, password)
-
-    if os.path.isdir(tokenstore) and os.listdir(tokenstore):
-        print("ℹ️  Token files found: " + str(os.listdir(tokenstore)))
-        try:
-            client.garth.load(tokenstore)
-            print("✅ Tokens loaded from ~/.garth")
-            client.display_name = "ba0cc129-91a0-4b4e-a3ea-045993674440"
-            client.username = "ba0cc129-91a0-4b4e-a3ea-045993674440"
-            print("✅ Logged in (display name set)")
-            return client
-        except Exception as e:
-            print("❌ Token login failed: " + str(e))
-            raise SystemExit(1)
-    else:
-        print("❌ No token files found in " + tokenstore)
-        raise SystemExit(1)
-
+    client.login()
+    print("✅ Logged in to Garmin (email/password)")
+    return client
 
 # ══════════════════════════════════════════════════════════════════════════════
 # HELPERS
