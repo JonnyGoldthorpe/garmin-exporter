@@ -15,6 +15,13 @@ jobs:
           python-version: '3.x'
       - name: Install dependencies
         run: pip install -r requirements.txt
+        - name: Debug secrets
+        env:
+          GARMIN_OAUTH1_TOKEN: ${{ secrets.GARMIN_OAUTH1_TOKEN }}
+          GARMIN_OAUTH2_TOKEN: ${{ secrets.GARMIN_OAUTH2_TOKEN }}
+        run: |
+          echo "OAuth1 length: ${#GARMIN_OAUTH1_TOKEN}"
+          echo "OAuth2 length: ${#GARMIN_OAUTH2_TOKEN}"
       - name: Run exporter
         env:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
