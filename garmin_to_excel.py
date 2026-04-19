@@ -122,31 +122,26 @@ ACTIVITY_START_COL = next(i + 1 for i, (k, _) in enumerate(COLUMNS) if k == "act
 def garmin_login():
     email      = os.environ.get("GARMIN_EMAIL")    or input("Garmin email: ")
     password   = os.environ.get("GARMIN_PASSWORD") or getpass("Garmin password: ")
-    oauth1_str = os.environ.get("GARMIN_OAUTH1_TOKEN")
-    oauth2_str = os.environ.get("GARMIN_OAUTH2_TOKEN")
-
-    print("OAuth1 present: " + str(bool(oauth1_str)))
-    print("OAuth2 present: " + str(bool(oauth2_str)))
-    print("GARMIN env vars: " + str([k for k in os.environ.keys() if "GARMIN" in k]))
-
-    if not oauth1_str or not oauth2_str:
-        print("❌ GARMIN_OAUTH1_TOKEN or GARMIN_OAUTH2_TOKEN not set")
-        raise SystemExit(1)
-
-    import json
-    import garth.auth_tokens as at
-
-    o1 = json.loads(oauth1_str)
-    o2 = json.loads(oauth2_str)
+    tokenstore = os.path.expanduser("~/.garth")
 
     client = garminconnect.Garmin(email, password)
-    client.garth.oauth1_token = at.OAuth1Token(**o1)
-    client.garth.oauth2_token = at.OAuth2Token(**o2)
-    client.garth.refresh_oauth2 = lambda: None
-    client.display_name = "ba0cc129-91a0-4b4e-a3ea-045993674440"
-    client.username = "ba0cc129-91a0-4b4e-a3ea-045993674440"
-    print("✅ Logged in (tokens loaded, refresh disabled)")
-    return client
+
+    if os.path.isdir(tokenstore) and os.listdir(tokenstore):
+        print("ℹ️  Token files found: " + str(os.listdir(tokenstore)))
+        try:
+            client.garth.load(tokenstore)
+            print("✅ Tokens loaded from ~/.garth")
+            client.garth.refresh_oauth2 = lambda: None
+            client.display_name = "ba0cc129-91a0-4b4e-a3ea-045993674440"
+            client.username = "ba0cc129-91a0-4b4e-a3ea-045993674440"
+            print("✅ Logged in as " + str(client.display_name))
+            return client
+        except Exception as e:
+            print("❌ Token login failed: " + str(e))
+            raise SystemExit(1)
+    else:
+        print("❌ No token files found in " + tokenstore)
+        raise SystemExit(1)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
