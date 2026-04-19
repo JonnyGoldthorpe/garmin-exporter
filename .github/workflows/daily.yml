@@ -13,48 +13,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-      - name: Write Garmin tokens
-        env:
-          OAUTH1: ${{ secrets.GARMIN_OAUTH1_TOKEN }}
-          OAUTH2: ${{ secrets.GARMIN_OAUTH2_TOKEN }}
-        run: |
-          mkdir -p ~/.garth
-          echo "$OAUTH1" > ~/.garth/oauth1_token.json
-          echo "$OAUTH2" > ~/.garth/oauth2_token.json
-          pip install garth -q
-          python - <<'EOF'
-          import garth
-          import garth.auth_tokens as at
-          import json
-
-          with open("/home/runner/.garth/oauth1_token.json") as f:
-              o1 = json.load(f)
-          with open("/home/runner/.garth/oauth2_token.json") as f:
-              o2 = json.load(f)
-
-          c = garth.Client()
-          c.oauth1_token = at.OAuth1Token(**o1)
-          c.oauth2_token = at.OAuth2Token(**o2)
-          c.refresh_oauth2()
-
-          with open("/home/runner/.garth/oauth2_token.json", "w") as f:
-              json.dump(dict(c.oauth2_token.__dict__), f, default=str)
-
-          print("Token refreshed successfully")
-          EOF
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Run exporter
         env:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
           GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
-          RENPHO_EMAIL: ${{ secrets.RENPHO_EMAIL }}
-          RENPHO_PASSWORD: ${{ secrets.RENPHO_PASSWORD }}
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_APP_PASSWORD: ${{ secrets.EMAIL_APP_PASSWORD }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: python garmin_to_excel.py
-      - name: Update Garmin token secrets
-        env:
-          GH_PAT: ${{ secrets.GH_PAT }}
-        run: python update_secrets.py
