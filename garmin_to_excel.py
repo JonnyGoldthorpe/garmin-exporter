@@ -120,17 +120,34 @@ ACTIVITY_START_COL = next(i + 1 for i, (k, _) in enumerate(COLUMNS) if k == "act
 # ══════════════════════════════════════════════════════════════════════════════
 
 def garmin_login():
-    email    = os.environ.get("GARMIN_EMAIL")    or input("Garmin email: ")
-    password = os.environ.get("GARMIN_PASSWORD") or getpass("Garmin password: ")
+    email      = os.environ.get("GARMIN_EMAIL")    or input("Garmin email: ")
+    password   = os.environ.get("GARMIN_PASSWORD") or getpass("Garmin password: ")
+    oauth1_str = os.environ.get("GARMIN_OAUTH1_TOKEN")
+    oauth2_str = os.environ.get("GARMIN_OAUTH2_TOKEN")
+
+    if not oauth1_str or not oauth2_str:
+        print("❌ GARMIN_OAUTH1_TOKEN or GARMIN_OAUTH2_TOKEN not set")
+        raise SystemExit(1)
+
+    import json
+    import garth.auth_tokens as at
+
+    o1 = json.loads(oauth1_str)
+    o2 = json.loads(oauth2_str)
 
     client = garminconnect.Garmin(email, password)
-    client.login()
-    
-    # Prevent garth from trying to refresh the token on every API call
+    client.garth.oauth1_token = at.OAuth1Token(**o1)
+    client.garth.oauth2_token = at.OAuth2Token(**o2)
+
+    # Disable token refresh completely - never hit exchange endpoint again
     client.garth.refresh_oauth2 = lambda: None
-    
-    print("✅ Logged in to Garmin (email/password)")
+
+    client.display_name = "ba0cc129-91a0-4b4e-a3ea-045993674440"
+    client.username = "ba0cc129-91a0-4b4e-a3ea-045993674440"
+
+    print("✅ Logged in (tokens loaded, refresh disabled)")
     return client
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # HELPERS
