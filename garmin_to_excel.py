@@ -125,6 +125,10 @@ def garmin_login():
 
     client = garminconnect.Garmin(email, password)
     client.login()
+    
+    # Prevent garth from trying to refresh the token on every API call
+    client.garth.refresh_oauth2 = lambda: None
+    
     print("✅ Logged in to Garmin (email/password)")
     return client
 
