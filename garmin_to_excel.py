@@ -45,7 +45,7 @@ except ImportError:
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 EXCEL_FILE    = "health_data.xlsx"
-DAYS_TO_FETCH = 7
+DAYS_TO_FETCH = 30
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -130,6 +130,7 @@ def garmin_login():
         print("ℹ️  Token files found: " + str(os.listdir(tokenstore)))
         try:
             client.garth.load(tokenstore)
+            print("✅ Tokens loaded from ~/.garth")
             client.display_name = "ba0cc129-91a0-4b4e-a3ea-045993674440"
             client.username = "ba0cc129-91a0-4b4e-a3ea-045993674440"
             print("✅ Logged in (display name set)")
@@ -140,7 +141,6 @@ def garmin_login():
     else:
         print("❌ No token files found in " + tokenstore)
         raise SystemExit(1)
-
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -413,7 +413,7 @@ def send_email(added: int):
 
     body = (
         "Hi,\n\n"
-        "Your weekly Garmin data export is attached (" + today + ").\n\n"
+        "Your Garmin data export is attached (" + today + ").\n\n"
         + str(added) + " new row(s) added.\n\n"
         "-- Your Health Exporter\n"
     )
