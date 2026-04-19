@@ -125,6 +125,10 @@ def garmin_login():
     oauth1_str = os.environ.get("GARMIN_OAUTH1_TOKEN")
     oauth2_str = os.environ.get("GARMIN_OAUTH2_TOKEN")
 
+    print("OAuth1 present: " + str(bool(oauth1_str)))
+    print("OAuth2 present: " + str(bool(oauth2_str)))
+    print("GARMIN env vars: " + str([k for k in os.environ.keys() if "GARMIN" in k]))
+
     if not oauth1_str or not oauth2_str:
         print("❌ GARMIN_OAUTH1_TOKEN or GARMIN_OAUTH2_TOKEN not set")
         raise SystemExit(1)
@@ -138,13 +142,9 @@ def garmin_login():
     client = garminconnect.Garmin(email, password)
     client.garth.oauth1_token = at.OAuth1Token(**o1)
     client.garth.oauth2_token = at.OAuth2Token(**o2)
-
-    # Disable token refresh completely - never hit exchange endpoint again
     client.garth.refresh_oauth2 = lambda: None
-
     client.display_name = "ba0cc129-91a0-4b4e-a3ea-045993674440"
     client.username = "ba0cc129-91a0-4b4e-a3ea-045993674440"
-
     print("✅ Logged in (tokens loaded, refresh disabled)")
     return client
 
