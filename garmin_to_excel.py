@@ -1,7 +1,7 @@
 """
 Health Data -> Excel Daily Exporter
 ------------------------------------
-Pulls comprehensive data from Garmin Connect and emails health_data.xlsx
+Pulls comprehensive data from Garmin Connect and emails health_data.xlsx + fit_files.zip
 
 Requirements:
     pip install garminconnect garth openpyxl
@@ -17,8 +17,10 @@ Environment variables (set in GitHub Secrets):
 """
 
 import datetime
+import io
 import os
 import smtplib
+import zipfile
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
@@ -45,7 +47,7 @@ except ImportError:
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 EXCEL_FILE    = "health_data.xlsx"
-DAYS_TO_FETCH = 365
+DAYS_TO_FETCH = 30
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -332,6 +334,40 @@ def fetch_garmin_day(client, date: datetime.date) -> dict:
     return data
 
 
+def download_fit_files(client, dates):
+    fit_files = {}
+    print("\nDownloading FIT files...")
+    for date in dates:
+        d = date.isoformat()
+        try:
+            activities = client.get_activities_by_date(d, d)
+            for act in activities[:1]:
+                act_id   = act.get("activityId")
+                act_type = act.get("activityType", {}).get("typeKey", "activity")
+                act_name = act.get("activityName", "").replace(" ", "-").lower()
+                filename = d + "_" + act_type + "_" + act_name + "_" + str(act_id) + ".fit"
+                try:
+                    fit_data = client.download_activity(
+                        act_id,
+                        dl_fmt=client.ActivityDownloadFormat.ORIGINAL
+                    )
+                    fit_files[filename] = fit_data
+                    print("  ✅ " + filename)
+                except Exception as e:
+                    print("  ⚠️  Could not download " + filename + ": " + str(e))
+        except Exception as e:
+            print("  ⚠️  Could not fetch activities for " + d + ": " + str(e))
+    return fit_files
+
+
+def create_zip(fit_files: dict) -> bytes:
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for filename, data in fit_files.items():
+            zf.writestr(filename, data)
+    return buf.getvalue()
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # EXCEL
 # ══════════════════════════════════════════════════════════════════════════════
@@ -397,7 +433,7 @@ def save_to_excel(all_data: list) -> int:
 # EMAIL
 # ══════════════════════════════════════════════════════════════════════════════
 
-def send_email(added: int):
+def send_email(added: int, fit_files: dict):
     sender       = os.environ.get("EMAIL_FROM")
     app_password = os.environ.get("EMAIL_APP_PASSWORD")
     recipient    = os.environ.get("EMAIL_TO")
@@ -415,7 +451,8 @@ def send_email(added: int):
     body = (
         "Hi,\n\n"
         "Your Garmin data export is attached (" + today + ").\n\n"
-        + str(added) + " new row(s) added.\n\n"
+        + str(added) + " new row(s) added.\n"
+        + str(len(fit_files)) + " FIT file(s) attached.\n\n"
         "-- Your Health Exporter\n"
     )
     msg.attach(MIMEText(body, "plain"))
@@ -426,6 +463,14 @@ def send_email(added: int):
         encoders.encode_base64(part)
         part.add_header("Content-Disposition", "attachment; filename=\"health_data_" + today + ".xlsx\"")
         msg.attach(part)
+
+    if fit_files:
+        zip_data = create_zip(fit_files)
+        part2 = MIMEBase("application", "zip")
+        part2.set_payload(zip_data)
+        encoders.encode_base64(part2)
+        part2.add_header("Content-Disposition", "attachment; filename=\"fit_files_" + today + ".zip\"")
+        msg.attach(part2)
 
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
         server.login(sender, app_password)
@@ -459,8 +504,11 @@ def main():
     added = save_to_excel(all_data)
     print("Added " + str(added) + " new row(s)")
 
+    fit_files = download_fit_files(client, dates)
+    print(str(len(fit_files)) + " FIT file(s) downloaded")
+
     print("\nSending email...")
-    send_email(added)
+    send_email(added, fit_files)
 
 
 if __name__ == "__main__":
